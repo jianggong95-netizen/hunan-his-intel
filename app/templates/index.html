@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>湖南公立医院 HIS 中标情报</title>
+<style>
+:root{
+  --ink:#12332c;--ink-2:#2c4f46;--green:#1f6f5c;--green-2:#2b8a72;--mint:#e8f3ef;
+  --gold:#b8892f;--line:#dbe6e1;--bg:#f4f7f5;--white:#fff;--red:#b42318;--amber:#a15c00;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 "Microsoft YaHei","PingFang SC","Hiragino Sans GB",sans-serif}
+a{color:var(--green);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font-family:inherit;cursor:pointer}
+.topbar{background:linear-gradient(100deg,#0f2e2a,#17493f 60%,#1f6f5c);color:#fff;padding:18px 26px 16px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.brand h1{margin:0;font-size:20px;letter-spacing:.5px;font-weight:700}
+.brand p{margin:3px 0 0;font-size:12px;color:#bcd6cc}
+.spacer{flex:1}
+.btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;border-radius:8px;padding:7px 13px;font-size:13px}
+.btn:hover{background:rgba(255,255,255,.2)}
+.btn.solid{background:#d8b56a;border-color:#d8b56a;color:#2a2312;font-weight:700}
+.btn.solid:hover{background:#e6c784}
+.user{font-size:12px;color:#cfe3db;text-align:right}
+.wrap{max-width:1440px;margin:0 auto;padding:20px 24px 40px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.stat{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:13px 15px;position:relative;overflow:hidden}
+.stat::after{content:"";position:absolute;left:0;top:0;width:3px;height:100%;background:var(--green)}
+.stat b{display:block;font-size:24px;line-height:1.2;font-weight:700}
+.stat span{font-size:12px;color:#6b8a80}
+.stat.warn::after{background:var(--amber)}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+.card{background:var(--white);border:1px solid var(--line);border-radius:12px;margin-bottom:16px}
+.card-h{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.card-h h2{margin:0;font-size:14px;font-weight:700}
+.card-h .sub{font-size:12px;color:#7a948b}
+.card-b{padding:14px 16px}
+.cities{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.city{border:1px solid var(--line);border-radius:10px;padding:9px 8px;text-align:center;background:#fbfdfc;cursor:pointer;transition:.15s}
+.city:hover{border-color:var(--green);transform:translateY(-1px)}
+.city.active{background:var(--mint);border-color:var(--green)}
+.city .n{font-weight:700;font-size:14px}
+.city .m{font-size:11px;color:#7a948b;margin-top:2px}
+.city .d{font-size:11px;color:var(--green);margin-top:3px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
+.filters input,.filters select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;background:#fbfdfc}
+.filters input{min-width:200px}
+.chip{border:1px solid var(--line);background:#fbfdfc;border-radius:999px;padding:5px 11px;font-size:12px}
+.chip.active{background:var(--green);border-color:var(--green);color:#fff}
+table{width:100%;border-collapse:collapse}
+th,td{padding:9px 10px;border-bottom:1px solid #edf2ef;text-align:left;vertical-align:top;font-size:13px}
+th{background:#f7faf8;color:#45685e;font-weight:600;font-size:12px;position:sticky;top:0}
+tr.grp td{border-top:2px solid #e2ece8}
+tr:hover td{background:#fbfdfc}
+.hosp{font-weight:700}
+.rank{display:inline-block;font-size:11px;padding:1px 6px;border-radius:6px;background:var(--mint);color:var(--green);margin-left:6px}
+.rank.two{background:#f1f1ee;color:#7a7a6f}
+.amount{font-variant-numeric:tabular-nums;white-space:nowrap}
+.brandtag{display:inline-block;background:#fdf6e7;border:1px solid #ecd9ae;color:#7a5a13;border-radius:6px;padding:1px 6px;font-size:12px}
+.brandtag.unknown{background:#f3f4f3;border-color:#dfe3e1;color:#7b8782}
+.badg{font-size:11px;padding:1px 5px;border-radius:5px;background:#fdecea;color:var(--red)}
+.okbg{font-size:11px;padding:1px 5px;border-radius:5px;background:var(--mint);color:var(--green)}
+.att{display:inline-block;margin:1px 3px 1px 0;padding:1px 6px;border:1px solid #d9e5df;border-radius:6px;font-size:11px;color:#3c6459;background:#f7fbf9}
+.att.bad{border-color:#f0c9c4;color:var(--red);background:#fdf4f3}
+.att.add{border-style:dashed;color:#6b8a80;background:#fff}
+.att.k-param{background:#eef7f2;border-color:#bfe0d2;color:#1f6f5c}
+.att.k-tender{background:#fdf6e7;border-color:#ecd9ae;color:#7a5a13}
+.mini{width:100%;border-collapse:collapse;font-size:12px}
+.mini th,.mini td{padding:6px 8px;border-bottom:1px solid #eef3f0;text-align:left;vertical-align:top}
+.mini th{color:#6b8a80;font-weight:500;background:#fafcfb}
+.bars{display:grid;gap:9px}
+.bar{display:grid;grid-template-columns:86px 1fr 44px;gap:8px;align-items:center;font-size:12px}
+.bar .track{background:#eef4f1;border-radius:6px;height:9px;overflow:hidden}
+.bar .fill{height:100%;background:linear-gradient(90deg,#2b8a72,#78bfa8)}
+.bar .fill.unknown{background:linear-gradient(90deg,#b7bdb9,#d5dad7)}
+.bar .v{text-align:right;color:#6b8a80}
+.kv{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #e8efec;font-size:12px}
+.kv:last-child{border-bottom:0}
+.kv b{font-size:13px}
+.healthrow{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed #e8efec;font-size:12px}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;background:#b7bdb9}
+.dot.ok{background:#2b8a72}.dot.bad{background:var(--red)}.dot.warn{background:var(--amber)}
+.logs{max-height:210px;overflow:auto;font:12px/1.6 Consolas,monospace;color:#5c7268;background:#f8fbf9;border-radius:8px;padding:8px 10px;white-space:pre-wrap}
+.empty{padding:34px 10px;text-align:center;color:#8aa198;font-size:13px}
+.note{font-size:12px;color:#8aa198;line-height:1.7}
+.mask{position:fixed;inset:0;background:rgba(8,26,22,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.mask.show{display:flex}
+.modal{background:#fff;border-radius:14px;width:min(760px,96vw);max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.modal-h{display:flex;justify-content:space-between;align-items:center;padding:15px 18px;border-bottom:1px solid var(--line)}
+.modal-h h3{margin:0;font-size:15px}
+.modal-b{padding:16px 18px}
+.formrow{display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center;margin-bottom:11px}
+.formrow label{font-size:13px;color:#4c6b61}
+.formrow input,.formrow select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}
+.srclist{display:grid;gap:6px}
+.src{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px}
+.src small{color:#8aa198;display:block}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.btn2{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px;font-size:13px;color:var(--ink)}
+.btn2.primary{background:var(--green);border-color:var(--green);color:#fff}
+.btn2:disabled{opacity:.5;cursor:not-allowed}
+.timeline{border-left:2px solid #cfe0da;padding-left:14px;margin-left:4px}
+.titem{position:relative;padding:0 0 14px 0}
+.titem::before{content:"";position:absolute;left:-20px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--green)}
+.titem .t1{font-weight:700;font-size:13px}
+.titem .t2{font-size:12px;color:#6b8a80;margin-top:2px}
+.toast{position:fixed;right:18px;bottom:18px;background:#12332c;color:#fff;padding:11px 16px;border-radius:10px;font-size:13px;opacity:0;transform:translateY(8px);transition:.2s;z-index:80}
+.toast.show{opacity:1;transform:none}
+@media(max-width:1100px){.cols{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}.cities{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}.cities{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">
+    <h1>湖南公立医院 HIS 中标情报</h1>
+    <p>宏观：14 市州 · 每家医院最近 2 次 HIS 中标 · 厂家品牌格局 · 公告与参数附件可追溯</p>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn solid" onclick="openCollect()">开始采集</button>
+  <button class="btn" onclick="doExport()">导出 Excel</button>
+  <button class="btn" onclick="checkAllAttachments()">附件复检</button>
+  <button class="btn" onclick="refreshHealth()">数据源体检</button>
+  <button class="btn" onclick="loadAll()">刷新</button>
+  <div class="user">{{ user }}（{{ role }}）<br><a href="/logout" style="color:#cfe3db">退出</a></div>
+</div>
+
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><b id="s-ann">0</b><span>HIS 中标公告</span></div>
+    <div class="stat"><b id="s-hosp">0</b><span>收录医院</span></div>
+    <div class="stat"><b id="s-city">0</b><span>有数据市州 / 14</span></div>
+    <div class="stat"><b id="s-brands">0</b><span>已识别 HIS 厂家</span></div>
+    <div class="stat warn"><b id="s-unknown">0%</b><span>未识别厂家占比</span></div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <div class="card">
+        <div class="card-h"><h2>市州分布</h2><span class="sub">点击市州筛选，0 表示该州数据源尚未跑通</span></div>
+        <div class="card-b"><div class="cities" id="cities"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-h">
+          <h2>每家医院最近 2 次 HIS 中标</h2>
+          <span class="sub" id="tableSub">按中标日期倒序；同一天多包合并计 1 次</span>
+          <div class="spacer"></div>
+          <button class="chip" onclick="openTasks()">采集任务</button>
+        </div>
+        <div class="filters">
+          <input id="q" placeholder="搜索医院 / 项目名称" oninput="debouncedLoad()">
+          <select id="year" onchange="loadRecords()"><option value="">全部年份</option></select>
+          <select id="brand" onchange="loadRecords()"><option value="">全部厂家</option></select>
+          <button class="chip" onclick="resetFilters()">重置</button>
+          <span class="sub" id="countHint" style="font-size:12px;color:#7a948b"></span>
+        </div>
+        <div style="overflow:auto">
+          <table>
+            <thead><tr>
+              <th style="width:118px">市州 / 医院</th><th>招标项目名称</th><th style="width:150px">中标单位</th>
+              <th style="width:96px">HIS 厂家</th><th style="width:104px">中标金额</th><th style="width:92px">中标日期</th>
+              <th style="width:150px">原文 / 附件</th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="empty" style="display:none"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-h"><h2>HIS 厂家份额</h2><span class="sub">按公告数</span></div>
+        <div class="card-b"><div class="bars" id="brandbars"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>数据质量</h2></div>
+        <div class="card-b" id="quality"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>数据源健康</h2><span class="sub">如实标注</span></div>
+        <div class="card-b" id="health"></div>
+      </div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:6px">
+    合规说明：仅采集公开公告，限速可暂停；不抓取天眼查网页、不绕验证码、不采个人信息。抓不到即标“未获取”，不编造公告、金额与附件。
+  </div>
+</div>
+
+<!-- 采集弹窗 -->
+<div class="mask" id="collectMask">
+  <div class="modal">
+    <div class="modal-h"><h3>开始采集</h3><button class="btn2" onclick="closeMask('collectMask')">关闭</button></div>
+    <div class="modal-b">
+      <div class="formrow"><label>数据源</label><div class="srclist" id="srclist"></div></div>
+      <div class="formrow"><label>关键词</label><input id="kw" placeholder="留空使用 config/his_keywords.txt"></div>
+      <div class="formrow"><label>起始日期</label><input id="since" value="2023-01-01"></div>
+      <div class="formrow"><label>每词最大页</label><input id="pages" type="number" value="6" min="1" max="40"></div>
+      <div class="note">实测提示：怀化/省站群搜索可用；省政采网与多数市州站点在当前网络下超时，需在境内网络运行。采集默认限速 4.5 秒/请求。</div>
+      <div class="modal-actions">
+        <button class="btn2" onclick="ctl('pause')">暂停</button>
+        <button class="btn2" onclick="ctl('resume')">恢复</button>
+        <button class="btn2" onclick="ctl('stop')">停止</button>
+        <button class="btn2 primary" onclick="startCollect()">启动</button>
+      </div>
+      <div class="logs" id="collectLog" style="margin-top:12px">尚未启动</div>
+    </div>
+  </div>
+</div>
+
+<!-- 任务弹窗 -->
+<div class="mask" id="taskMask">
+  <div class="modal">
+    <div class="modal-h"><h3>采集任务与日志</h3><button class="btn2" onclick="closeMask('taskMask')">关闭</button></div>
+    <div class="modal-b"><div id="tasklist" class="note">加载中…</div></div>
+  </div>
+</div>
+
+<!-- 医院时间线 -->
+<div class="mask" id="hospitalMask">
+  <div class="modal">
+    <div class="modal-h"><h3 id="hospitalTitle">医院</h3><button class="btn2" onclick="closeMask('hospitalMask')">关闭</button></div>
+    <div class="modal-b"><div id="timeline" class="timeline"></div></div>
+  </div>
+</div>
+
+<!-- 附件管理 -->
+<div class="mask" id="attMask">
+  <div class="modal">
+    <div class="modal-h"><h3>附件管理</h3><button class="btn2" onclick="closeMask('attMask')">关闭</button></div>
+    <div class="modal-b">
+      <div id="attList">加载中…</div>
+      <div style="border-top:1px dashed #dbe6e1;margin-top:14px;padding-top:12px">
+        <div class="formrow"><label>附件类型</label>
+          <select id="attKind"><option>参数文件</option><option>招标文件</option><option>中标公告</option><option>其他</option></select></div>
+        <div class="formrow"><label>选择文件</label><input id="attFile" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.ofd,.txt,.jpg,.jpeg,.png"></div>
+        <div class="modal-actions"><button class="btn2 primary" onclick="uploadAttachment()">上传附件</button></div>
+        <div class="note">手工上传会记录上传人、时间、SHA256，并写入审计日志。公告原文与可下载直链为自动采集来源。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const state = {city:"", brand:"", year:"", q:"", cities:[], records:[]};
+const $ = id => document.getElementById(id);
+const fmtMoney = v => v==null ? "未获取" : (v>=1e8 ? (v/1e8).toFixed(2)+" 亿元" : (v/1e4).toFixed(2)+" 万元");
+const esc = s => (s??"").toString().replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+let timer = null;
+
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2600); }
+function closeMask(id){ $(id).classList.remove("show"); }
+function debouncedLoad(){ clearTimeout(timer); timer=setTimeout(loadRecords,300); }
+
+async function api(url, opt){
+  const r = await fetch(url, opt);
+  if(r.status===401){ location.href="/login"; throw new Error("未登录"); }
+  return r.json();
+}
+
+async function loadAll(){
+  const d = await api("/api/summary");
+  state.cities = d.cities || [];
+  const q = d.quality || {};
+  $("s-ann").textContent = q.announcements || 0;
+  $("s-hosp").textContent = q.hospitals || 0;
+  const covered = state.cities.filter(c=>c.announcements>0).length;
+  $("s-city").textContent = covered;
+  $("s-brands").textContent = (d.brands||[]).filter(b=>b.b!=="未识别").length;
+  $("s-unknown").textContent = ((q.unknown_brand_ratio||0)*100).toFixed(0)+"%";
+  renderCities();
+  renderBrands(d.brands||[]);
+  renderQuality(q);
+  renderHealth(d.health||[], []);
+  renderBrandFilter(d.brands||[]);
+  renderYearFilter();
+  await loadRecords();
+  pollCollect();
+}
+
+function renderCities(){
+  $("cities").innerHTML = state.cities.map(c=>`
+    <div class="city ${state.city===c.code?"active":""}" onclick="pickCity('${c.code}')">
+      <div class="n">${esc(c.short)}</div>
+      <div class="m">医院 ${c.hospitals} · 公告 ${c.announcements}</div>
+      <div class="d">${c.announcements? "近2次 "+c.covered_hospitals+" 家" : "暂无数据"}</div>
+    </div>`).join("");
+}
+function pickCity(code){ state.city = state.city===code ? "" : code; renderCities(); loadRecords(); }
+
+function renderBrands(brands){
+  const max = Math.max(1, ...brands.map(b=>b.c));
+  const top = brands.slice(0,10);
+  $("brandbars").innerHTML = top.length ? top.map(b=>{
+    const pct = Math.round(b.c/max*100);
+    const unk = b.b==="未识别";
+    return `<div class="bar"><span title="${esc(b.b)}">${esc(b.b)}</span>
+      <div class="track"><div class="fill ${unk?"unknown":""}" style="width:${pct}%"></div></div>
+      <span class="v">${b.c}</span></div>`;
+  }).join("") : `<div class="note">暂无数据。点击右上角“开始采集”跑第一批真实公告。</div>`;
+}
+
+function renderQuality(q){
+  const atts = q.attachments || {};
+  const kinds = q.attachments_by_kind || {};
+  const attTotal = Object.values(atts).reduce((a,b)=>a+b,0);
+  const param = (kinds["参数文件"]||{}).count||0;
+  const tender = (kinds["招标文件"]||{}).count||0;
+  $("quality").innerHTML = `
+    <div class="kv"><span>公告总数</span><b>${q.announcements||0}</b></div>
+    <div class="kv"><span>医院总数</span><b>${q.hospitals||0}</b></div>
+    <div class="kv"><span>详情不可达</span><b style="color:${q.detail_unreachable?"#a15c00":"#1f6f5c"}">${q.detail_unreachable||0}</b></div>
+    <div class="kv"><span>缺中标金额</span><b style="color:${q.missing_amount?"#a15c00":"#1f6f5c"}">${q.missing_amount||0}</b></div>
+    <div class="kv"><span>缺参数/招标附件</span><b style="color:${q.missing_attachment?"#a15c00":"#1f6f5c"}">${q.missing_attachment||0}</b></div>
+    <div class="kv"><span>未识别厂家</span><b>${q.unknown_brand_awards||0} / ${q.awards||0}</b></div>
+    <div class="kv"><span>附件留存</span><b>${atts.ok||0} 有效 / ${attTotal} 条</b></div>
+    <div class="kv"><span>参数 / 招标文件</span><b>${param} / ${tender}</b></div>`;
+}
+
+function renderHealth(rows, sources){
+  if(!rows.length){ $("health").innerHTML = `<div class="note">尚未体检。点击顶部“数据源体检”。</div>`; return; }
+  $("health").innerHTML = rows.map(r=>{
+    const cls = r.status==="available" ? "ok" : (r.status==="blocked"?"warn":"bad");
+    const label = {available:"可用",blocked:"被风控拦截",unreachable:"不可达",error:"异常"}[r.status]||r.status;
+    return `<div class="healthrow"><span><i class="dot ${cls}"></i>${esc(r.source)}</span>
+      <span style="color:#6b8a80" title="${esc(r.note)}">${label}</span></div>`;
+  }).join("");
+}
+
+function renderBrandFilter(brands){
+  const sel = $("brand");
+  sel.innerHTML = `<option value="">全部厂家</option>` + brands.map(b=>`<option value="${esc(b.b)}">${esc(b.b)}（${b.c}）</option>`).join("");
+  sel.value = state.brand;
+}
+function renderYearFilter(){
+  const sel=$("year"); const nowY=new Date().getFullYear();
+  const years=[]; for(let y=nowY;y>=2015;y--) years.push(y);
+  sel.innerHTML = `<option value="">全部年份</option>` + years.map(y=>`<option>${y}</option>`).join("");
+  sel.value = state.year;
+}
+function resetFilters(){ state.city="";state.brand="";state.year="";state.q=""; $("q").value=""; $("brand").value=""; $("year").value=""; renderCities(); loadRecords(); }
+
+async function loadRecords(){
+  state.brand = $("brand").value; state.year = $("year").value; state.q = $("q").value;
+  const p = new URLSearchParams();
+  if(state.city) p.set("city",state.city);
+  if(state.brand) p.set("brand",state.brand);
+  if(state.year) p.set("year",state.year);
+  if(state.q) p.set("q",state.q);
+  const d = await api("/api/records?"+p.toString());
+  state.records = d.rows || [];
+  renderRecords();
+}
+
+function renderRecords(){
+  const rows = state.records;
+  $("countHint").textContent = `共 ${rows.length} 条记录`;
+  const tbody = $("rows"); const empty=$("empty");
+  if(!rows.length){
+    tbody.innerHTML="";
+    empty.style.display="block";
+    empty.innerHTML = state.city || state.brand || state.year || state.q
+      ? "当前筛选条件无记录，试试重置筛选。"
+      : `暂无数据。点击右上角“开始采集”执行首批真实采集；当前网络下建议优先跑“湖南省政府网站站群搜索 + 怀化市公共资源交易中心”。`;
+    return;
+  }
+  empty.style.display="none";
+  let lastHosp = -1;
+  tbody.innerHTML = rows.map(r=>{
+    const grp = r.hospital_id!==lastHosp; lastHosp=r.hospital_id;
+    const atts = r.attachments||[];
+    const direct = atts.filter(a=>a.source!=="announcement");
+    const attHtml = direct.length ? direct.slice(0,3).map(a=>{
+      const cls = a.kind==="参数文件" ? "k-param" : (a.kind==="招标文件" ? "k-tender" : "");
+      return `<a class="att ${cls} ${a.is_valid?"":"bad"}" target="_blank"
+        href="/attachment/${a.id}" title="${esc(a.name)}（${esc(a.kind)}，${a.is_valid?"有效":"失效"}）">${esc((a.name||a.kind).slice(0,12))}</a>`;
+    }).join("") : `<span style="color:#9fb2aa;font-size:12px">无参数附件</span>`;
+    const brandCls = r.brand==="未识别" ? "unknown":"";
+    const statusBadge = r.fetch_status!=="ok" ? `<span class="badg">详情不可达</span>` : "";
+    return `<tr class="${grp?"grp":""}">
+      <td><div class="hosp"><a href="javascript:void(0)" onclick="openHospital(${r.hospital_id})">${esc(r.hospital_name)}</a></div>
+        <div style="font-size:12px;color:#7a948b">${esc(r.city)}<span class="rank ${r.rank===2?"two":""}">近${r.rank}次</span></div></td>
+      <td>${esc(r.title)} ${statusBadge}</td>
+      <td>${esc(r.supplier)}</td>
+      <td><span class="brandtag ${brandCls}" title="${r.brand_confidence<0.6?'正文提及，待人工复核':'供应商名称直接命中'}">${esc(r.brand)}${r.brand!=="未识别"&&r.brand_confidence<0.6?' ·待核':''}</span></td>
+      <td class="amount">${fmtMoney(r.amount)}</td>
+      <td class="amount">${esc(r.publish_date)||"未获取"}</td>
+      <td><a target="_blank" href="${esc(r.url)}">公告原文</a><div style="margin-top:3px">${attHtml}
+        <button class="att add" onclick="openAttachments(${r.announcement_id})">附件管理</button></div></td>
+    </tr>`;
+  }).join("");
+}
+
+async function openHospital(id){
+  const d = await api("/api/hospital/"+id);
+  if(!d.ok) return toast(d.error||"加载失败");
+  $("hospitalTitle").textContent = d.hospital.name;
+  $("timeline").innerHTML = d.timeline.map(t=>{
+    const brands = t.brands || "未识别";
+    return `<div class="titem">
+      <div class="t1"><a target="_blank" href="${esc(t.url)}">${esc(t.title)}</a></div>
+      <div class="t2">${esc(t.publish_date||"未获取")} · ${esc(brands)} · ${fmtMoney(t.amount)} · 附件 ${t.att_count||0}</div>
+    </div>`;
+  }).join("") || `<div class="note">暂无记录</div>`;
+  $("hospitalMask").classList.add("show");
+}
+
+let attAnnId = 0;
+
+async function openAttachments(id){
+  attAnnId = id;
+  $("attList").innerHTML = "加载中…";
+  $("attMask").classList.add("show");
+  const d = await api(`/api/announcement/${id}/attachments`);
+  if(!d.ok){ $("attList").textContent = d.error || "加载失败"; return; }
+  const rows = d.rows || [];
+  $("attList").innerHTML = `<table class="mini"><thead><tr>
+      <th>类型</th><th>文件</th><th>来源</th><th>状态</th><th>上传人</th><th>SHA256</th><th>操作</th></tr></thead><tbody>` +
+    rows.map(a=>{
+      const isOrig = a.source==="announcement";
+      const srcName = a.source==="manual" ? "手工上传" : (isOrig ? "公告原文" : "自动直链");
+      const link = isOrig
+        ? `<a href="${esc(a.url)}" target="_blank">打开原文</a>`
+        : `<a href="/attachment/${a.id}" target="_blank">预览</a> <a href="/attachment/${a.id}?download=1">下载</a>`;
+      const check = isOrig ? "" : ` <a href="javascript:void(0)" onclick="checkAttachment(${a.id})">复检</a>`;
+      const sha = a.sha256 ? a.sha256.slice(0,12)+"…" : "—";
+      return `<tr><td>${esc(a.kind)}</td><td>${esc(a.name)}</td><td>${srcName}</td>
+        <td>${a.is_valid?`<span class="okbg">有效</span>`:`<span class="badg">失效</span>`}</td>
+        <td>${esc(a.uploader||"—")}</td><td title="${esc(a.sha256||"")}">${sha}</td>
+        <td>${link}${check}</td></tr>`;
+    }).join("") + `</tbody></table><div class="note">共 ${rows.length} 条附件记录（公告原文 1 条 + 自动直链 + 手工上传）</div>`;
+}
+
+async function uploadAttachment(){
+  const f = $("attFile").files[0];
+  if(!f) return toast("请选择文件");
+  const fd = new FormData();
+  fd.append("announcement_id", attAnnId);
+  fd.append("kind", $("attKind").value);
+  fd.append("file", f);
+  const r = await fetch("/api/attachments/upload", {method:"POST", body:fd});
+  const d = await r.json();
+  toast(d.ok ? "上传成功" : (d.error||"上传失败"));
+  if(d.ok){ $("attFile").value=""; openAttachments(attAnnId); loadAll(); }
+}
+
+async function checkAttachment(id){
+  const d = await api(`/api/attachments/${id}/check`, {method:"POST"});
+  toast(d.valid ? "链接有效" : "已标记失效");
+  openAttachments(attAnnId); loadAll();
+}
+
+async function checkAllAttachments(){
+  toast("正在复检附件链接…");
+  const d = await api("/api/attachments/check", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+  toast(d.ok ? `复检 ${d.checked} 条：有效 ${d.valid}，失效 ${d.invalid}` : (d.error||"复检失败"));
+  loadAll();
+}
+
+function openCollect(){
+  $("srclist").innerHTML = [{id:"hunan_gov_search",name:"湖南省政府网站站群搜索",note:"全省站点关键词发现，实测可用"},
+    {id:"huaihua_ggzy",name:"怀化市公共资源交易中心",note:"列表+详情，实测可用"},
+    {id:"ccgp_national",name:"中国政府采购网",note:"参数可用，本机 IP 被风控；境内网络可试"}]
+    .map((s,i)=>`<label class="src"><input type="checkbox" value="${s.id}" ${i<2?"checked":""}>
+      <span><b>${s.name}</b><small>${s.note}</small></span></label>`).join("");
+  $("collectMask").classList.add("show");
+  pollCollect();
+}
+
+async function startCollect(){
+  const sources = [...document.querySelectorAll("#srclist input:checked")].map(x=>x.value);
+  if(!sources.length) return toast("请选择至少一个数据源");
+  const body = {sources, since:$("since").value, max_pages:parseInt($("pages").value||"6")};
+  const kw = $("kw").value.trim(); if(kw) body.keywords = kw.split(/[,，]/).map(s=>s.trim()).filter(Boolean);
+  const d = await api("/api/collect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  toast(d.ok?d.message:(d.error||"启动失败"));
+  pollCollect();
+}
+async function ctl(action){ const d=await api("/api/collect/"+action,{method:"POST"}); toast(d.message||d.error||action); }
+
+async function pollCollect(){
+  const d = await api("/api/collect/status");
+  const box = $("collectLog");
+  if(box){
+    let txt = d.running ? "采集中…（限速 4.5 秒/请求，可暂停）" : (d.error ? "失败: "+d.error : (d.last ? `完成：候选 ${d.last.items||0}，新增 ${d.last.inserted||0}，更新 ${d.last.updated||0}，跳过 ${d.last.skipped||0}` : "尚未启动"));
+    if(d.task_id){ 
+      const logs = await api(`/api/tasks/${d.task_id}/logs`);
+      const lines = (logs.rows||[]).slice(0,12).reverse().map(l=>`[${l.ts.slice(11)}] ${l.level==="warning"?"!":""} ${l.message}`);
+      txt += "\n" + lines.join("\n");
+    }
+    box.textContent = txt;
+  }
+  if(d.running) setTimeout(pollCollect,2500);
+  else if(d.last){ loadAll(); }
+}
+
+async function refreshHealth(){
+  toast("正在体检数据源…");
+  const d = await api("/api/health/refresh",{method:"POST"});
+  if(d.ok){ renderHealth(d.rows, []); toast("体检完成"); }
+}
+
+async function doExport(){
+  const d = await api("/api/export",{method:"POST"});
+  if(d.ok){ toast("已生成 Excel"); window.location.href = d.download; }
+  else toast(d.error||"导出失败");
+}
+
+async function openTasks(){
+  const d = await api("/api/tasks");
+  $("tasklist").innerHTML = (d.rows||[]).map(t=>`
+    <div class="kv"><span>#${t.id} ${esc(t.source)}</span>
+      <span>${t.status} · 新增 ${t.inserted} / 更新 ${t.updated} · ${esc(t.started_at||"")}</span></div>`).join("") || "暂无任务";
+  $("taskMask").classList.add("show");
+}
+
+loadAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+[
+  {"name": "东华医为", "aliases": ["东华医为", "东华软件", "东华医疗", "东华"], "category": "HIS"},
+  {"name": "卫宁健康", "aliases": ["卫宁健康", "卫宁软件", "卫宁"], "category": "HIS"},
+  {"name": "创业慧康", "aliases": ["创业慧康", "创业软件", "创业医疗"], "category": "HIS"},
+  {"name": "东软", "aliases": ["东软集团", "东软医疗", "东软"], "category": "HIS"},
+  {"name": "万达信息", "aliases": ["万达信息", "万达"], "category": "HIS"},
+  {"name": "众阳健康", "aliases": ["众阳健康", "众阳软件", "众阳"], "category": "HIS"},
+  {"name": "联众", "aliases": ["联众智慧", "联众"], "category": "HIS"},
+  {"name": "坐标软件", "aliases": ["坐标软件", "坐标"], "category": "HIS"},
+  {"name": "中联", "aliases": ["中联信息", "中联"], "category": "HIS"},
+  {"name": "蓝网科技", "aliases": ["蓝网科技", "蓝网"], "category": "HIS"},
+  {"name": "易联众", "aliases": ["易联众"], "category": "HIS"},
+  {"name": "和仁科技", "aliases": ["和仁科技", "和仁"], "category": "HIS"},
+  {"name": "天健", "aliases": ["天健科技", "天健"], "category": "HIS"},
+  {"name": "金蝶医疗", "aliases": ["金蝶医疗", "金蝶"], "category": "HIS"},
+  {"name": "用友医疗", "aliases": ["用友医疗", "用友"], "category": "HIS"},
+  {"name": "智业软件", "aliases": ["智业软件", "智业"], "category": "HIS"},
+  {"name": "慧康", "aliases": ["慧康"], "category": "HIS"},
+  {"name": "曼荼罗", "aliases": ["曼荼罗"], "category": "HIS"},
+  {"name": "望海", "aliases": ["望海"], "category": "HIS"},
+  {"name": "巨龙信息", "aliases": ["巨龙信息", "巨龙"], "category": "HIS"}
+]

@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*.db
+data/attachments/*
+data/exports/*
+build/
+dist/
+*.spec
