@@ -1,6 +1,7 @@
 """Excel 导出：明细、市州汇总、品牌份额、数据质量。"""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from openpyxl import Workbook
@@ -34,13 +35,13 @@ def _write_sheet(ws, headers: list[str], rows: list[list], widths: list[int]) ->
     ws.auto_filter.ref = ws.dimensions
 
 
-def export_excel(path=None) -> str:
+def export_excel(path=None, filters: dict | None = None) -> str:
     path = path or (config.EXPORT_DIR / f"湖南HIS中标情报_{datetime.now():%Y%m%d_%H%M}.xlsx")
     wb = Workbook()
     ws = wb.active
     ws.title = "每院最近2次"
 
-    records = latest_two()
+    records = latest_two(filters)
     rows = []
     for r in records:
         direct = [a for a in r["attachments"] if a["source"] != "announcement"]
@@ -55,6 +56,7 @@ def export_excel(path=None) -> str:
             [
                 r["city"], r["hospital_name"], f"最近{r['rank']}次", r["title"], r["publish_date"],
                 r["supplier"], r["brand"], r["amount"] if r["amount"] is not None else "未获取",
+                r.get("note") or "", "、".join(r.get("tags") or []), r.get("note_status") or "",
                 r["url"], types or "无参数/招标附件", "\n".join(links) or "未获取",
                 "详情不可达" if r["fetch_status"] != "ok" else "正常",
             ]
@@ -62,17 +64,18 @@ def export_excel(path=None) -> str:
     _write_sheet(
         ws,
         ["市州", "医院", "次序", "招标项目名称", "中标日期", "中标单位", "HIS厂家品牌",
-         "中标金额(元)", "公告原文", "附件类型", "附件链接（直链/本地）", "数据状态"],
+         "中标金额(元)", "备注", "标签", "处理状态", "公告原文", "附件类型",
+         "附件链接（直链/本地）", "数据状态"],
         rows,
-        [10, 28, 10, 46, 12, 30, 16, 14, 40, 26, 52, 12],
+        [10, 28, 10, 46, 12, 30, 16, 14, 40, 20, 12, 40, 26, 52, 12],
     )
     for i, row in enumerate(rows, start=2):
-        cell = ws.cell(i, 9)
-        cell.hyperlink = row[8]
+        cell = ws.cell(i, 12)
+        cell.hyperlink = row[11]
         cell.style = "Hyperlink"
-        first = (row[10] or "").split("\n")[0]
+        first = (row[13] or "").split("\n")[0]
         if "http" in first:
-            link_cell = ws.cell(i, 11)
+            link_cell = ws.cell(i, 14)
             link_cell.hyperlink = first.split("：", 1)[-1]
             link_cell.style = "Hyperlink"
 
@@ -98,6 +101,9 @@ def export_excel(path=None) -> str:
         ws4,
         ["指标", "数值"],
         [
+            ["本次导出记录数", len(records)],
+            ["导出筛选条件", json.dumps(filters or {}, ensure_ascii=False)],
+            ["有备注记录数", q.get("noted_records", 0)],
             ["公告总数", q["announcements"]],
             ["医院总数", q["hospitals"]],
             ["详情不可达", q["detail_unreachable"]],

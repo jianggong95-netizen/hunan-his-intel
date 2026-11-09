@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import re
 
 from .db import db, now
 from .regions import CITIES
+
+NOTE_STATUSES = ("跟进中", "已联系", "重点客户", "已成交", "待评估", "无需跟进")
 
 
 def _city_map(conn) -> dict[str, str]:
@@ -13,40 +15,97 @@ def _city_map(conn) -> dict[str, str]:
     return {r["code"]: r["short"] for r in rows}
 
 
-def latest_two(city_code: str | None = None, brand: str | None = None, year: str | None = None) -> list[dict]:
+def normalize_tags(raw) -> str:
+    """标签统一为逗号分隔、去重、最多 12 个；兼容中文逗号/顿号/分号/空格。"""
+    if not raw:
+        return ""
+    items = raw if isinstance(raw, (list, tuple)) else re.split(r"[,，、;；\s]+", str(raw))
+    out: list[str] = []
+    for item in items:
+        text = str(item).strip()
+        if text and text not in out:
+            out.append(text[:24])
+    return ",".join(out[:12])
+
+
+def latest_two(filters: dict | None = None) -> list[dict]:
+    """每家医院最近 2 次中标，叠加组合筛选。
+
+    filters: city / hospital_id / brand / year / date_from / date_to /
+             amount_min / amount_max（元） / q / has_note(1|0) / tag / status
+    """
+    f = filters or {}
     sql = """
-    WITH ranked AS (
-        SELECT a.id, a.hospital_id, a.publish_date,
-               ROW_NUMBER() OVER (PARTITION BY a.hospital_id
-                                  ORDER BY COALESCE(a.publish_date,'') DESC, a.id DESC) AS rn
+    WITH filtered AS (
+        SELECT a.id, a.hospital_id, COALESCE(a.publish_date,'') AS d
         FROM announcements a
         WHERE a.hospital_id IS NOT NULL AND a.is_void = 0
+    """
+    params: list = []
+    if f.get("city"):
+        sql += " AND a.city_code = ?"
+        params.append(f["city"])
+    if f.get("hospital_id"):
+        sql += " AND a.hospital_id = ?"
+        params.append(int(f["hospital_id"]))
+    if f.get("year"):
+        sql += " AND substr(COALESCE(a.publish_date,''),1,4) = ?"
+        params.append(f["year"])
+    if f.get("date_from"):
+        sql += " AND a.publish_date >= ?"
+        params.append(f["date_from"])
+    if f.get("date_to"):
+        sql += " AND a.publish_date <= ?"
+        params.append(f["date_to"])
+    sql += """
+    ),
+    dated AS (
+        SELECT hospital_id,
+               CASE WHEN d = '' THEN 'id:' || id ELSE d END AS day_key,
+               MAX(id) AS id,
+               MAX(d) AS d,
+               GROUP_CONCAT(id) AS ids
+        FROM filtered
+        GROUP BY hospital_id, day_key
+    ),
+    ranked AS (
+        SELECT id, hospital_id, d, ids,
+               ROW_NUMBER() OVER (PARTITION BY hospital_id ORDER BY d DESC, id DESC) AS rn
+        FROM dated
     )
-    SELECT a.*, h.name AS hospital_name, r.rn
+    SELECT a.*, h.name AS hospital_name, r.rn, r.ids,
+           n.note AS note_text, n.tags AS note_tags, n.status AS note_status,
+           n.updated_at AS note_updated_at, n.updated_by AS note_updated_by
     FROM ranked r
     JOIN announcements a ON a.id = r.id
     JOIN hospitals h ON h.id = a.hospital_id
+    LEFT JOIN record_notes n ON n.ann_url = a.url
     WHERE r.rn <= 2
     """
-    params: list = []
-    if city_code:
-        sql += " AND a.city_code = ?"
-        params.append(city_code)
-    if year:
-        sql += " AND substr(COALESCE(a.publish_date,''),1,4) = ?"
-        params.append(year)
     sql += " ORDER BY h.name, a.publish_date DESC"
+
+    keyword = (f.get("q") or "").strip().lower()
+    amount_min = f.get("amount_min")
+    amount_max = f.get("amount_max")
+    has_note = str(f.get("has_note") or "")
+    tag_filter = (f.get("tag") or "").strip()
+    status_filter = (f.get("status") or "").strip()
+    brand_filter = (f.get("brand") or "").strip()
 
     with db() as conn:
         cities = _city_map(conn)
         rows = conn.execute(sql, params).fetchall()
         result = []
         for row in rows:
+            # 同一医院同一天多包：该日所有公告的记录一并聚合，但只计 1 次
+            ids = [int(x) for x in (row["ids"] or str(row["id"])).split(",") if x]
+            marks = ",".join("?" * len(ids))
             awards = conn.execute(
-                "SELECT supplier_raw, brand_name, brand_confidence, amount_yuan FROM awards WHERE announcement_id=?",
-                (row["id"],),
+                f"SELECT supplier_raw, brand_name, brand_confidence, amount_yuan FROM awards "
+                f"WHERE announcement_id IN ({marks}) AND is_winner=1",
+                ids,
             ).fetchall()
-            if brand and not any((a["brand_name"] or "") == brand for a in awards):
+            if brand_filter and not any((a["brand_name"] or "") == brand_filter for a in awards):
                 continue
             amounts = [a["amount_yuan"] for a in awards if a["amount_yuan"]]
             brands = []
@@ -56,13 +115,45 @@ def latest_two(city_code: str | None = None, brand: str | None = None, year: str
             suppliers = [a["supplier_raw"] for a in awards if a["supplier_raw"]]
             atts = conn.execute(
                 "SELECT id, name, url, kind, source, status, is_valid, uploader, local_path, sha256, size "
-                "FROM attachments WHERE announcement_id=? ORDER BY "
+                f"FROM attachments WHERE announcement_id IN ({marks}) ORDER BY "
                 "CASE kind WHEN '中标公告' THEN 3 WHEN '参数文件' THEN 0 WHEN '招标文件' THEN 1 ELSE 2 END, id",
-                (row["id"],),
+                ids,
             ).fetchall()
+            amount = max(amounts) if amounts else None
+            note_text = row["note_text"] or ""
+            tags = [t for t in (row["note_tags"] or "").split(",") if t]
+            note_status = row["note_status"] or ""
+            has_any_note = bool(note_text.strip() or tags or note_status)
+            supplier_text = "、".join(dict.fromkeys(suppliers)) or "未获取"
+            brand_text = "、".join(brands) or "未识别"
+
+            if amount_min is not None:
+                if amount is None or amount < float(amount_min):
+                    continue
+            if amount_max is not None:
+                if amount is None or amount > float(amount_max):
+                    continue
+            if has_note == "1" and not has_any_note:
+                continue
+            if has_note == "0" and has_any_note:
+                continue
+            if tag_filter and tag_filter not in tags:
+                continue
+            if status_filter and note_status != status_filter:
+                continue
+            if keyword:
+                haystack = " ".join(
+                    [row["hospital_name"] or "", row["title"] or "", supplier_text, brand_text,
+                     note_text, ",".join(tags), cities.get(row["city_code"] or "", "")]
+                ).lower()
+                if keyword not in haystack:
+                    continue
+
             result.append(
                 {
                     "announcement_id": row["id"],
+                    "announcement_ids": ids,
+                    "package_count": len(ids),
                     "hospital_id": row["hospital_id"],
                     "hospital_name": row["hospital_name"],
                     "city_code": row["city_code"],
@@ -70,16 +161,103 @@ def latest_two(city_code: str | None = None, brand: str | None = None, year: str
                     "title": row["title"],
                     "url": row["url"],
                     "publish_date": row["publish_date"] or "",
-                    "supplier": "、".join(dict.fromkeys(suppliers)) or "未获取",
-                    "brand": "、".join(brands) or "未识别",
+                    "supplier": supplier_text,
+                    "brand": brand_text,
                     "brand_confidence": max([a["brand_confidence"] or 0 for a in awards], default=0),
-                    "amount": max(amounts) if amounts else None,
+                    "amount": amount,
                     "attachments": [dict(a) for a in atts],
                     "fetch_status": row["fetch_status"],
                     "rank": row["rn"],
+                    "note": note_text,
+                    "tags": tags,
+                    "note_status": note_status,
+                    "note_updated_at": row["note_updated_at"] or "",
+                    "note_updated_by": row["note_updated_by"] or "",
+                    "has_note": has_any_note,
                 }
             )
         return result
+
+
+def filter_options() -> dict:
+    """筛选下拉选项：医院、品牌、年份、标签、处理状态。"""
+    with db() as conn:
+        cities = _city_map(conn)
+        hospitals = conn.execute(
+            "SELECT h.id, h.name, h.city_code, COUNT(a.id) anns FROM hospitals h "
+            "JOIN announcements a ON a.hospital_id=h.id AND a.is_void=0 "
+            "GROUP BY h.id, h.name, h.city_code ORDER BY h.city_code, h.name"
+        ).fetchall()
+        brands = conn.execute(
+            "SELECT COALESCE(NULLIF(brand_name,''),'未识别') b, COUNT(DISTINCT announcement_id) c "
+            "FROM awards WHERE is_winner=1 GROUP BY b ORDER BY c DESC, b"
+        ).fetchall()
+        years = conn.execute(
+            "SELECT DISTINCT substr(publish_date,1,4) y FROM announcements "
+            "WHERE publish_date IS NOT NULL AND publish_date<>'' ORDER BY y DESC"
+        ).fetchall()
+        note_rows = conn.execute("SELECT tags, status FROM record_notes").fetchall()
+
+    tags: list[str] = []
+    for row in note_rows:
+        for tag in (row["tags"] or "").split(","):
+            tag = tag.strip()
+            if tag and tag not in tags:
+                tags.append(tag)
+    statuses = list(NOTE_STATUSES)
+    for row in note_rows:
+        status = (row["status"] or "").strip()
+        if status and status not in statuses:
+            statuses.append(status)
+    return {
+        "hospitals": [
+            {"id": r["id"], "name": r["name"], "city": cities.get(r["city_code"] or "", "未归属"),
+             "city_code": r["city_code"] or "", "announcements": r["anns"]}
+            for r in hospitals
+        ],
+        "brands": [dict(r) for r in brands],
+        "years": [r["y"] for r in years if r["y"]],
+        "tags": tags,
+        "statuses": statuses,
+    }
+
+
+def upsert_note(announcement_id: int, note: str, tags, status: str, actor: str) -> dict | None:
+    """按公告 URL 稳定写入备注；note/tags/status 全空则删除备注。"""
+    note = (note or "").strip()[:2000]
+    tags_norm = normalize_tags(tags)
+    status = (status or "").strip()[:40]
+    with db() as conn:
+        ann = conn.execute("SELECT id, url FROM announcements WHERE id=?", (announcement_id,)).fetchone()
+        if not ann:
+            raise ValueError("公告不存在")
+        old = conn.execute("SELECT * FROM record_notes WHERE ann_url=?", (ann["url"],)).fetchone()
+        if not (note or tags_norm or status):
+            conn.execute("DELETE FROM record_notes WHERE ann_url=?", (ann["url"],))
+            if old:
+                conn.execute(
+                    "INSERT INTO change_history(entity, entity_id, field, old_value, new_value, changed_at, actor) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    ("note", announcement_id, "deleted", json.dumps(dict(old), ensure_ascii=False), "", now(), actor),
+                )
+            return None
+        conn.execute(
+            "INSERT INTO record_notes(ann_url, announcement_id, note, tags, status, created_by, created_at, "
+            "updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(ann_url) DO UPDATE SET announcement_id=excluded.announcement_id, note=excluded.note, "
+            "tags=excluded.tags, status=excluded.status, updated_by=excluded.updated_by, "
+            "updated_at=excluded.updated_at",
+            (ann["url"], announcement_id, note, tags_norm, status, actor, now(), actor, now()),
+        )
+        new = conn.execute("SELECT * FROM record_notes WHERE ann_url=?", (ann["url"],)).fetchone()
+        conn.execute(
+            "INSERT INTO change_history(entity, entity_id, field, old_value, new_value, changed_at, actor) "
+            "VALUES (?,?,?,?,?,?,?)",
+            ("note", announcement_id, "note",
+             json.dumps(dict(old), ensure_ascii=False) if old else "",
+             json.dumps(dict(new), ensure_ascii=False), now(), actor),
+        )
+        return dict(new)
 
 
 def city_summary() -> list[dict]:
@@ -113,7 +291,7 @@ def brand_share() -> list[dict]:
     with db() as conn:
         rows = conn.execute(
             "SELECT COALESCE(NULLIF(brand_name,''),'未识别') b, COUNT(DISTINCT announcement_id) c, "
-            "SUM(COALESCE(amount_yuan,0)) amount FROM awards GROUP BY b ORDER BY c DESC"
+            "SUM(COALESCE(amount_yuan,0)) amount FROM awards WHERE is_winner=1 GROUP BY b ORDER BY c DESC"
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -127,14 +305,15 @@ def quality_stats() -> dict:
         ).fetchone()["c"]
         missing_amount = conn.execute(
             "SELECT COUNT(*) c FROM announcements a WHERE NOT EXISTS "
-            "(SELECT 1 FROM awards w WHERE w.announcement_id=a.id AND w.amount_yuan IS NOT NULL)"
+            "(SELECT 1 FROM awards w WHERE w.announcement_id=a.id AND w.amount_yuan IS NOT NULL AND w.is_winner=1)"
         ).fetchone()["c"]
         unknown_brand = conn.execute(
-            "SELECT COUNT(*) c FROM awards WHERE brand_name='未识别' OR brand_name IS NULL OR brand_name=''"
+            "SELECT COUNT(*) c FROM awards WHERE is_winner=1 "
+            "AND (brand_name='未识别' OR brand_name IS NULL OR brand_name='')"
         ).fetchone()["c"]
-        total_awards = conn.execute("SELECT COUNT(*) c FROM awards").fetchone()["c"]
+        total_awards = conn.execute("SELECT COUNT(*) c FROM awards WHERE is_winner=1").fetchone()["c"]
         pending = conn.execute(
-            "SELECT COUNT(*) c FROM awards WHERE review_status='pending'"
+            "SELECT COUNT(*) c FROM awards WHERE review_status='pending' AND is_winner=1"
         ).fetchone()["c"]
         missing_att = conn.execute(
             "SELECT COUNT(*) c FROM announcements a WHERE NOT EXISTS "
@@ -152,7 +331,12 @@ def quality_stats() -> dict:
         ).fetchall()
         sources = conn.execute("SELECT source, COUNT(*) c FROM attachments GROUP BY source").fetchall()
         unread = conn.execute("SELECT COUNT(*) c FROM notifications WHERE is_read=0").fetchone()["c"]
+        noted = conn.execute(
+            "SELECT COUNT(*) c FROM record_notes WHERE trim(COALESCE(note,''))<>'' "
+            "OR trim(COALESCE(tags,''))<>'' OR trim(COALESCE(status,''))<>''"
+        ).fetchone()["c"]
         return {
+            "noted_records": noted,
             "announcements": total_ann,
             "hospitals": total_h,
             "detail_unreachable": unreachable,
@@ -201,8 +385,10 @@ def hospital_timeline(hospital_id: int) -> list[dict]:
         rows = conn.execute(
             "SELECT a.*, (SELECT GROUP_CONCAT(DISTINCT brand_name) FROM awards w WHERE w.announcement_id=a.id) brands, "
             "(SELECT MAX(amount_yuan) FROM awards w WHERE w.announcement_id=a.id) amount, "
-            "(SELECT COUNT(*) FROM attachments t WHERE t.announcement_id=a.id) att_count "
-            "FROM announcements a WHERE a.hospital_id=? AND a.is_void=0 ORDER BY a.publish_date DESC",
+            "(SELECT COUNT(*) FROM attachments t WHERE t.announcement_id=a.id) att_count, "
+            "n.note, n.tags, n.status AS note_status, n.updated_at AS note_updated_at "
+            "FROM announcements a LEFT JOIN record_notes n ON n.ann_url=a.url "
+            "WHERE a.hospital_id=? AND a.is_void=0 ORDER BY a.publish_date DESC",
             (hospital_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -236,7 +422,8 @@ def review_queue(limit: int = 200) -> list[dict]:
             "h.name AS hospital_name, h.city_code "
             "FROM awards w JOIN announcements a ON a.id=w.announcement_id "
             "LEFT JOIN hospitals h ON h.id=a.hospital_id "
-            "WHERE w.review_status='pending' ORDER BY w.brand_confidence ASC, w.id DESC LIMIT ?",
+            "WHERE w.review_status='pending' AND w.is_winner=1 "
+            "ORDER BY w.brand_confidence ASC, w.id DESC LIMIT ?",
             (limit,),
         ).fetchall()
         cities = _city_map(conn)

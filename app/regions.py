@@ -51,6 +51,16 @@ COUNTY_RULES = {
     "湘西": ["吉首", "泸溪", "凤凰", "花垣", "保靖", "古丈", "永顺", "龙山"],
 }
 
+# 机构名 -> 市州（名称不含区县或市州时使用，均为公开可查的隶属关系）
+INSTITUTION_RULES = {
+    "湘南学院": "郴州",
+    "湖南医药学院": "怀化",
+    "湖南省脑科医院": "长沙",
+    "湖南省第二人民医院": "长沙",
+    "湖南省直中医医院": "株洲",
+    "湖南中医药高等专科学校": "株洲",
+}
+
 
 def scope_to_short() -> dict[str, str]:
     return {c["scope"]: c["short"] for c in CITIES}
@@ -68,12 +78,19 @@ def detect_city(*texts: str) -> str | None:
     for token, short in DOMAIN_RULES:
         if token in joined:
             return short
-    for short, counties in COUNTY_RULES.items():
+    for short in COUNTY_RULES:
         if short in joined:
             return short
-        for county in counties:
-            if county in joined:
-                return short
+    # 区县/机构按名称长度优先匹配，避免「武陵源」被「武陵」误判为常德
+    county_pairs = sorted(
+        [(token, short) for short, tokens in COUNTY_RULES.items() for token in tokens]
+        + [(token, short) for token, short in INSTITUTION_RULES.items()],
+        key=lambda pair: len(pair[0]),
+        reverse=True,
+    )
+    for token, short in county_pairs:
+        if token in joined:
+            return short
     # 兜底：市州全称
     for c in CITIES:
         if c["name"] in joined:

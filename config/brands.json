@@ -18,5 +18,11 @@
   {"name": "慧康", "aliases": ["慧康"], "category": "HIS"},
   {"name": "曼荼罗", "aliases": ["曼荼罗"], "category": "HIS"},
   {"name": "望海", "aliases": ["望海"], "category": "HIS"},
-  {"name": "巨龙信息", "aliases": ["巨龙信息", "巨龙"], "category": "HIS"}
+  {"name": "巨龙信息", "aliases": ["巨龙信息", "巨龙"], "category": "HIS"},
+  {"name": "创星科技", "aliases": ["创星科技", "创星"], "category": "HIS"},
+  {"name": "北大医信", "aliases": ["北大医信", "北大医疗信息技术"], "category": "HIS"},
+  {"name": "联医科技", "aliases": ["联医科技", "联医"], "category": "HIS"},
+  {"name": "长信畅中", "aliases": ["长信畅中"], "category": "HIS"},
+  {"name": "医沃", "aliases": ["医沃信息", "医沃"], "category": "HIS"},
+  {"name": "创智和宇", "aliases": ["创智和宇"], "category": "HIS"}
 ]

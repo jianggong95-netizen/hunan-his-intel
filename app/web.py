@@ -1,7 +1,9 @@
 """Flask Web 应用：页面、API、导出、权限与审计。"""
 from __future__ import annotations
 
+import io
 import json
+import re
 import threading
 import time
 from functools import wraps
@@ -9,7 +11,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 
-from . import aggregate, attachments, config, export, pipeline, tianyancha
+from . import aggregate, attachments, brands_ops, config, export, hospital_master, importer, pipeline, tianyancha
 from .db import audit, db, now
 from .collectors.base import PAUSE_EVENT, STOP_EVENT
 from .collectors.registry import SOURCES
@@ -98,22 +100,75 @@ def index():
                            cities=aggregate.city_summary(), sources=SOURCES)
 
 
-def _filtered_records() -> list[dict]:
-    city = request.args.get("city") or None
-    brand = request.args.get("brand") or None
-    year = request.args.get("year") or None
-    q = (request.args.get("q") or "").strip()
-    rows = aggregate.latest_two(city_code=city, brand=brand, year=year)
-    if q:
-        rows = [r for r in rows if q in r["hospital_name"] or q in r["title"]]
-    return rows
+def _build_filters(data) -> dict:
+    """把 GET 参数或 JSON 体归一为筛选条件；金额入参单位为万元，内部换算为元。"""
+    def get(key: str) -> str:
+        value = data.get(key) if hasattr(data, "get") else None
+        return str(value).strip() if value is not None else ""
+
+    filters: dict = {}
+    if get("city"):
+        filters["city"] = get("city")
+    if get("hospital_id"):
+        try:
+            filters["hospital_id"] = int(get("hospital_id"))
+        except ValueError:
+            pass
+    if get("brand"):
+        filters["brand"] = get("brand")
+    if get("year"):
+        filters["year"] = get("year")
+    for key in ("date_from", "date_to"):
+        value = get(key)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            filters[key] = value
+    for key in ("amount_min", "amount_max"):
+        value = get(key)
+        if value:
+            try:
+                filters[key] = float(value) * 10000  # 万元 -> 元
+            except ValueError:
+                pass
+    if get("q"):
+        filters["q"] = get("q")
+    if get("has_note") in ("0", "1"):
+        filters["has_note"] = get("has_note")
+    if get("tag"):
+        filters["tag"] = get("tag")
+    if get("status"):
+        filters["status"] = get("status")
+    return filters
 
 
 @app.get("/api/records")
 @login_required
 def api_records():
-    rows = _filtered_records()
-    return jsonify({"ok": True, "total": len(rows), "rows": rows})
+    filters = _build_filters(request.args)
+    rows = aggregate.latest_two(filters)
+    return jsonify({"ok": True, "total": len(rows), "rows": rows, "filters": filters})
+
+
+@app.get("/api/filters")
+@login_required
+def api_filters():
+    return jsonify({"ok": True, **aggregate.filter_options()})
+
+
+@app.post("/api/records/<int:ann_id>/note")
+@role_required("admin", "analyst")
+def api_note_save(ann_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        note = aggregate.upsert_note(
+            ann_id, payload.get("note", ""), payload.get("tags", ""), payload.get("status", ""),
+            session.get("user", "system"),
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    with db() as conn:
+        audit(conn, session.get("user", ""), "note_update", f"ann={ann_id} status={payload.get('status','')}",
+              request.remote_addr or "")
+    return jsonify({"ok": True, "note": note})
 
 
 @app.get("/api/summary")
@@ -200,7 +255,7 @@ def api_collect():
         if COLLECT_STATE["running"]:
             return jsonify({"ok": False, "error": "已有采集任务在运行"}), 409
         payload = request.get_json(silent=True) or {}
-        sources = payload.get("sources") or ["hunan_gov_search", "huaihua_ggzy"]
+        sources = payload.get("sources") or ["hunan_ccgp", "hunan_gov_search", "huaihua_ggzy"]
         keywords = payload.get("keywords") or None
         since = payload.get("since") or config.COLLECT_SINCE
         max_pages = int(payload.get("max_pages") or config.COLLECT_MAX_PAGES)
@@ -241,10 +296,39 @@ def api_collect_status():
 @app.post("/api/export")
 @role_required("admin", "analyst", "viewer")
 def api_export():
-    path = export.export_excel()
+    filters = _build_filters(request.get_json(silent=True) or {})
+    path = export.export_excel(filters=filters)
     with db() as conn:
-        audit(conn, session.get("user", ""), "export", path, request.remote_addr or "")
+        audit(conn, session.get("user", ""), "export",
+              json.dumps({"path": path, "filters": filters}, ensure_ascii=False), request.remote_addr or "")
     return jsonify({"ok": True, "path": path, "download": url_for("download", filename=Path(path).name)})
+
+
+@app.post("/api/import")
+@role_required("admin", "analyst")
+def api_import():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "请选择 CSV 或 XLSX 文件"}), 400
+    try:
+        result = importer.import_records(
+            file.stream, file.filename, actor=session.get("user", "system"), ip=request.remote_addr or ""
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"导入失败：{exc}"}), 500
+    return jsonify({"ok": True, **result})
+
+
+@app.get("/api/import/template")
+@login_required
+def api_import_template():
+    data = importer.template_csv()
+    return send_file(
+        io.BytesIO(data), mimetype="text/csv; charset=utf-8", as_attachment=True,
+        download_name="中标数据导入模板.csv",
+    )
 
 
 @app.get("/download/<path:filename>")
@@ -308,6 +392,153 @@ def api_attachments_check_all():
     result = attachments.recheck_all(limit=payload.get("limit"), actor=session.get("user", "system"))
     return jsonify({"ok": True, **result})
 
+
+
+@app.get("/api/notifications")
+@login_required
+def api_notifications():
+    limit = request.args.get("limit", type=int) or 50
+    rows = aggregate.notifications(limit)
+    unread = sum(1 for r in rows if not r["is_read"])
+    return jsonify({"ok": True, "rows": rows, "unread": unread})
+
+
+@app.post("/api/notifications/read")
+@login_required
+def api_notifications_read():
+    payload = request.get_json(silent=True) or {}
+    count = aggregate.mark_notifications_read(payload.get("ids"))
+    return jsonify({"ok": True, "updated": count})
+
+
+@app.get("/api/review/queue")
+@login_required
+def api_review_queue():
+    limit = request.args.get("limit", type=int) or 200
+    return jsonify({"ok": True, "rows": aggregate.review_queue(limit),
+                    "stats": brands_ops.unknown_ratio()})
+
+
+@app.post("/api/review/<int:award_id>/confirm")
+@role_required("admin", "analyst")
+def api_review_confirm(award_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = brands_ops.confirm_award(
+            award_id, payload.get("brand", ""), session.get("user", "system"), request.remote_addr or ""
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify(result)
+
+
+@app.post("/api/review/<int:award_id>/pending")
+@role_required("admin", "analyst")
+def api_review_pending(award_id: int):
+    return jsonify(brands_ops.mark_pending(award_id, session.get("user", "system"), request.remote_addr or ""))
+
+
+@app.post("/api/review/recompute")
+@role_required("admin", "analyst")
+def api_review_recompute():
+    payload = request.get_json(silent=True) or {}
+    result = brands_ops.recompute_awards(payload.get("announcement_id"),
+                                         session.get("user", "system"))
+    return jsonify({"ok": True, **result, "stats": brands_ops.unknown_ratio()})
+
+
+@app.get("/api/rules")
+@login_required
+def api_rules():
+    return jsonify({"ok": True, "rows": brands_ops.rules_list()})
+
+
+@app.post("/api/rules")
+@role_required("admin", "analyst")
+def api_rule_add():
+    payload = request.get_json(silent=True) or {}
+    try:
+        row = brands_ops.add_rule(
+            payload.get("pattern", ""), payload.get("brand_name", ""),
+            payload.get("match_type") or "contains", payload.get("priority") or 1,
+            payload.get("note", ""), session.get("user", "system"), request.remote_addr or "",
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "row": row})
+
+
+@app.put("/api/rules/<int:rule_id>")
+@role_required("admin", "analyst")
+def api_rule_update(rule_id: int):
+    payload = request.get_json(silent=True) or {}
+    try:
+        row = brands_ops.update_rule(rule_id, **payload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify({"ok": True, "row": row})
+
+
+@app.delete("/api/rules/<int:rule_id>")
+@role_required("admin", "analyst")
+def api_rule_delete(rule_id: int):
+    return jsonify(brands_ops.delete_rule(rule_id, session.get("user", "system"), request.remote_addr or ""))
+
+
+@app.get("/api/hospitals/unmatched")
+@login_required
+def api_hospitals_unmatched():
+    return jsonify({"ok": True, "rows": aggregate.unmatched_hospitals(),
+                    "suggestions": hospital_master.suggestions()})
+
+
+@app.get("/api/hospitals/search")
+@login_required
+def api_hospitals_search():
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": True, "rows": []})
+    return jsonify({"ok": True, "rows": aggregate.hospitals_list(q=q)})
+
+
+@app.post("/api/hospitals/merge")
+@role_required("admin", "analyst")
+def api_hospital_merge():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = hospital_master.merge(
+            int(payload.get("source_id") or 0), int(payload.get("target_id") or 0),
+            session.get("user", "system"), request.remote_addr or "",
+        )
+    except (ValueError, TypeError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    return jsonify(result)
+
+
+@app.get("/api/hospitals/master/template")
+@login_required
+def api_hospital_master_template():
+    return send_file(
+        io.BytesIO(hospital_master.template_csv()), mimetype="text/csv; charset=utf-8",
+        as_attachment=True, download_name="医院主数据导入模板.csv",
+    )
+
+
+@app.post("/api/hospitals/master/import")
+@role_required("admin", "analyst")
+def api_hospital_master_import():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"ok": False, "error": "请选择 CSV 或 XLSX 文件"}), 400
+    try:
+        result = hospital_master.import_master(
+            file.stream, file.filename, session.get("user", "system"), request.remote_addr or ""
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"导入失败：{exc}"}), 500
+    return jsonify({"ok": True, **result})
 
 
 @app.get("/api/tianyancha")

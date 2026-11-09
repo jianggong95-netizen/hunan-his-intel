@@ -25,12 +25,12 @@ from .normalize import (
     his_relevance,
     is_award_notice,
     is_void,
-    match_brand,
     normalize_company,
     normalize_name,
     parse_date,
     guess_city,
 )
+from . import brands_ops
 from .regions import CITY_BY_SHORT, detect_city
 
 TITLE_HINTS = ("信息系统", "信息化", "智慧医院", "电子病历", "HIS", "信息平台", "信息管理", "软件",
@@ -127,17 +127,21 @@ def ingest_item(conn, fetcher: Fetcher, item: dict, logger, since: str | None = 
 
     detail = None
     fetch_status = "ok"
-    try:
-        resp = fetcher.get(url, retries=1)
-        if resp is None or resp.status_code != 200:
+    if item.get("detail_text"):
+        text = clean_text(item["detail_text"])
+        detail = {"attachments": item.get("detail_attachments") or []}
+    else:
+        try:
+            resp = fetcher.get(url, retries=1)
+            if resp is None or resp.status_code != 200:
+                fetch_status = "detail_unreachable"
+            else:
+                detail = parse_detail(resp.text, url)
+        except Exception as exc:  # noqa: BLE001
             fetch_status = "detail_unreachable"
-        else:
-            detail = parse_detail(resp.text, url)
-    except Exception as exc:  # noqa: BLE001
-        fetch_status = "detail_unreachable"
-        logger(f"[详情] 抓取异常 {url}: {exc}", "warning")
+            logger(f"[详情] 抓取异常 {url}: {exc}", "warning")
 
-    text = clean_text(detail["text"]) if detail else ""
+    text = clean_text(detail["text"]) if detail and detail.get("text") else (clean_text(item.get("detail_text")) if item.get("detail_text") else "")
     full_text = f"{title}\n{text}"
     score, matched = his_relevance(title, full_text)
     if score < 3:
@@ -162,7 +166,10 @@ def ingest_item(conn, fetcher: Fetcher, item: dict, logger, since: str | None = 
     hospital_id = upsert_hospital(conn, purchaser, city_short, item.get("source_name", ""), url)
 
     amount, amount_raw = extract_amount(text)
-    suppliers = extract_suppliers(text)
+    if item.get("amount_override") is not None:
+        amount, amount_raw = item["amount_override"], str(item["amount_override"])
+    supplier_override = (item.get("supplier_override") or "").strip()
+    suppliers = [supplier_override] if supplier_override else extract_suppliers(text)
     award_date = parse_date(publish) or publish or ""
     chash = content_hash(full_text)
 
@@ -208,21 +215,25 @@ def ingest_item(conn, fetcher: Fetcher, item: dict, logger, since: str | None = 
 
     if suppliers:
         for idx, supplier in enumerate(suppliers):
-            brand, confidence, basis = match_brand(supplier, full_text)
+            brand, confidence, basis = brands_ops.match(supplier, full_text, conn=conn)
+            status = "pending" if (not brand or confidence < 0.7) else "none"
             conn.execute(
                 "INSERT INTO awards(announcement_id, package_no, supplier_raw, supplier_norm, brand_name, brand_confidence, "
-                "amount_yuan, amount_raw, award_date, is_winner) VALUES (?,?,?,?,?,?,?,?,?,1)",
+                "amount_yuan, amount_raw, award_date, is_winner, brand_basis, review_status) "
+                "VALUES (?,?,?,?,?,?,?,?,?,1,?,?)",
                 (
                     ann_id, "1" if idx == 0 else str(idx + 1), supplier, normalize_company(supplier),
                     brand or "未识别", confidence, amount if idx == 0 else None,
-                    amount_raw if idx == 0 else "", award_date,
+                    amount_raw if idx == 0 else "", award_date, basis, status,
                 ),
             )
     else:
         conn.execute(
             "INSERT INTO awards(announcement_id, package_no, supplier_raw, supplier_norm, brand_name, brand_confidence, "
-            "amount_yuan, amount_raw, award_date, is_winner) VALUES (?,?,?,?,?,?,?,?,?,1)",
-            (ann_id, "1", "", "", "未识别", 0.0, amount, amount_raw, award_date),
+            "amount_yuan, amount_raw, award_date, is_winner, brand_basis, review_status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,1,?,?)",
+            (ann_id, "1", "", "", "未识别", 0.0, amount, amount_raw, award_date,
+             "未提取到中标供应商", "pending"),
         )
 
     if detail and detail.get("attachments"):
@@ -237,7 +248,7 @@ def run_collection(sources: list[str] | None = None, keywords: list[str] | None 
     """执行一次采集任务，返回统计。"""
     since = since or config.COLLECT_SINCE
     keywords = keywords or config.load_keywords()
-    sources = sources or ["hunan_gov_search", "huaihua_ggzy"]
+    sources = sources or ["hunan_ccgp", "hunan_gov_search", "huaihua_ggzy"]
     STOP_EVENT.clear()
     PAUSE_EVENT.clear()
     fetcher = Fetcher()
@@ -253,7 +264,11 @@ def run_collection(sources: list[str] | None = None, keywords: list[str] | None 
             for sid in sources:
                 if STOP_EVENT.is_set():
                     break
-                if sid == "hunan_gov_search":
+                if sid == "hunan_ccgp":
+                    items = collectors[sid].collect(keywords[:4], max_pages=max_pages, since=since)
+                    candidates.extend(items)
+                    stats["pages"] += (max_pages or config.COLLECT_MAX_PAGES)
+                elif sid == "hunan_gov_search":
                     items = collectors[sid].collect(keywords[:3], max_pages=max_pages)
                     filtered = [
                         it for it in items

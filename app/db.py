@@ -127,6 +127,21 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notif_read ON notifications(is_read);
 
+CREATE TABLE IF NOT EXISTS record_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ann_url TEXT NOT NULL UNIQUE,
+    announcement_id INTEGER,
+    note TEXT DEFAULT '',
+    tags TEXT DEFAULT '',
+    status TEXT DEFAULT '',
+    created_by TEXT,
+    created_at TEXT,
+    updated_by TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_note_ann ON record_notes(announcement_id);
+CREATE INDEX IF NOT EXISTS idx_note_status ON record_notes(status);
+
 CREATE TABLE IF NOT EXISTS crawl_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT,
@@ -242,6 +257,23 @@ def migrate_db(conn: sqlite3.Connection) -> None:
         "WHERE NOT EXISTS (SELECT 1 FROM notifications n WHERE n.announcement_id=a.id)",
         (now(),),
     )
+    # 同步配置文件里新增的品牌与规则（只增不改，保留界面维护的规则）
+    for brand in config.load_brands():
+        conn.execute(
+            "INSERT OR IGNORE INTO brands(name, aliases, category) VALUES (?,?,?)",
+            (brand["name"], json.dumps(brand.get("aliases", []), ensure_ascii=False), brand.get("category", "HIS")),
+        )
+    existing_rules = {
+        (row["pattern"], row["brand_name"])
+        for row in conn.execute("SELECT pattern, brand_name FROM supplier_brand_rules").fetchall()
+    }
+    for rule in config.load_supplier_rules():
+        if (rule["pattern"], rule["brand_name"]) in existing_rules:
+            continue
+        conn.execute(
+            "INSERT INTO supplier_brand_rules(pattern, brand_name, match_type, priority, note) VALUES (?,?,?,?,?)",
+            (rule["pattern"], rule["brand_name"], rule["match_type"], rule["priority"], rule["note"]),
+        )
     # 低置信/未识别进入待核队列
     conn.execute(
         "UPDATE awards SET review_status='pending' WHERE review_status='none' "

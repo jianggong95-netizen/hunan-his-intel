@@ -6,7 +6,7 @@ import csv
 import json
 import sys
 
-from . import aggregate, attachments, config, export, pipeline, web
+from . import aggregate, attachments, brands_ops, config, export, hospital_master, importer, pipeline, web
 from .db import db, init_db, now
 from .normalize import normalize_name
 from .regions import CITY_BY_SHORT, detect_city
@@ -47,18 +47,23 @@ def cmd_serve(_args):
 
 
 def cmd_import_hospitals(args):
-    """导入医院名录 CSV：列名 name,city,level,source。"""
+    """导入医院名录 CSV/XLSX：中文或英文表头均可；--master 标记为主数据。"""
     init_db()
+    if args.master:
+        with open(args.path, "rb") as fh:
+            result = hospital_master.import_master(fh, args.path, actor="cli")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
     added = 0
     with open(args.path, encoding="utf-8-sig", newline="") as fh:
         reader = csv.DictReader(fh)
         with db() as conn:
             for row in reader:
-                name = (row.get("name") or "").strip()
+                name = (row.get("name") or row.get("医院名称") or "").strip()
                 if not name:
                     continue
                 norm = normalize_name(name)
-                city = row.get("city") or detect_city(name) or ""
+                city = row.get("city") or row.get("市州") or detect_city(name) or ""
                 short = city.replace("市", "") if city else ""
                 code = CITY_BY_SHORT.get(short, {}).get("code")
                 exists = conn.execute("SELECT id FROM hospitals WHERE norm_name=?", (norm,)).fetchone()
@@ -71,6 +76,26 @@ def cmd_import_hospitals(args):
                 )
                 added += 1
     print(f"导入完成，新增 {added} 家医院")
+
+
+def cmd_hospital_unmatched(_args):
+    init_db()
+    print(json.dumps({"unmatched": aggregate.unmatched_hospitals(),
+                      "suggestions": hospital_master.suggestions()}, ensure_ascii=False, indent=2))
+
+
+def cmd_brand_recompute(args):
+    init_db()
+    result = brands_ops.recompute_awards(args.announcement_id, actor="cli")
+    result["stats"] = brands_ops.unknown_ratio()
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cmd_import_records(args):
+    """导入中标数据 CSV/XLSX：按公告链接合并，保留已有备注。"""
+    init_db()
+    result = importer.import_records(args.path, args.path, actor="cli")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 def cmd_stats(_args):
@@ -105,9 +130,21 @@ def main(argv=None):
     p.add_argument("--pages", type=int, default=config.COLLECT_MAX_PAGES)
     p.set_defaults(func=cmd_collect)
 
-    p2 = sub.add_parser("import-hospitals", help="导入医院名录 CSV")
+    p2 = sub.add_parser("import-hospitals", help="导入医院名录 CSV/XLSX")
     p2.add_argument("path")
+    p2.add_argument("--master", action="store_true", help="标记为主数据（卫健委名录），用于别名归并")
     p2.set_defaults(func=cmd_import_hospitals)
+
+    sub.add_parser("hospital-unmatched", help="列出未匹配医院与归并建议").set_defaults(
+        func=cmd_hospital_unmatched)
+
+    p5 = sub.add_parser("brand-recompute", help="按包件与集成商规则重算品牌")
+    p5.add_argument("--announcement-id", type=int, default=None)
+    p5.set_defaults(func=cmd_brand_recompute)
+
+    p4 = sub.add_parser("import-records", help="导入/更新中标数据 CSV/XLSX（按公告链接合并，备注保留）")
+    p4.add_argument("path")
+    p4.set_defaults(func=cmd_import_records)
 
     args = parser.parse_args(argv)
     args.func(args)

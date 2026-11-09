@@ -170,8 +170,11 @@ def _brand_catalog() -> tuple[list[dict], list[dict]]:
     return config.load_brands(), config.load_supplier_rules()
 
 
-def match_brand(supplier: str, full_text: str) -> tuple[str | None, float, str]:
-    """返回 (品牌, 置信度, 依据)。供应商直接命中给高置信，正文命中给低置信。"""
+def match_brand(supplier: str, full_text: str, allow_text: bool = True) -> tuple[str | None, float, str]:
+    """返回 (品牌, 置信度, 依据)。供应商直接命中给高置信，正文命中给低置信。
+
+    allow_text=False 时只认供应商名称，避免把“正文提到某品牌”误当成中标厂家。
+    """
     brands, rules = _brand_catalog()
     supplier = supplier or ""
     for rule in sorted(rules, key=lambda r: r["priority"]):
@@ -186,11 +189,12 @@ def match_brand(supplier: str, full_text: str) -> tuple[str | None, float, str]:
         for alias in brand.get("aliases", []):
             if alias and alias in supplier:
                 return brand["name"], 0.85, "供应商名称命中别名"
-    for brand in brands:
-        for alias in brand.get("aliases", []):
-            if alias and len(alias) >= 2 and alias in full_text:
-                # 正文提及给低置信，避免把集成商误判为厂家
-                return brand["name"], 0.45, "正文提及品牌，需人工复核"
+    if allow_text:
+        for brand in brands:
+            for alias in brand.get("aliases", []):
+                if alias and len(alias) >= 2 and alias in full_text:
+                    # 正文提及给低置信，避免把集成商误判为厂家
+                    return brand["name"], 0.45, "正文提及品牌，需人工复核"
     return None, 0.0, "未识别"
 
 

@@ -18,3 +18,9 @@ pattern,brand_name,match_type,priority,note
 慧康,慧康,contains,2,
 曼荼罗,曼荼罗,contains,1,
 望海,望海,contains,2,
+创星,创星科技,contains,1,湖南本土医疗信息化厂商
+北大医,北大医信,contains,1,北大医疗信息技术
+联医科技,联医科技,contains,1,深圳医疗信息化厂商
+长信畅中,长信畅中,contains,1,湖南医疗信息化厂商
+医沃,医沃,contains,1,湖南医疗信息化厂商
+创智和宇,创智和宇,contains,1,医疗健康信息化厂商

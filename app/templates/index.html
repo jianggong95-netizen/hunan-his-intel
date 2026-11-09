@@ -45,7 +45,24 @@ button{font-family:inherit;cursor:pointer}
 .city .d{font-size:11px;color:var(--green);margin-top:3px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}
 .filters input,.filters select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;background:#fbfdfc}
-.filters input{min-width:200px}
+.filters input{min-width:0}
+.filters #fq{min-width:210px;flex:1 1 210px}
+.filters .fsep{font-size:12px;color:#7a948b;margin:0 2px}
+.filters .dash{color:#9fb2aa;font-size:12px}
+.notecell{width:210px}
+.note-text{font-size:12px;color:#42665c;line-height:1.45;max-height:3.1em;overflow:hidden;margin-top:3px;word-break:break-all}
+.note-empty{font-size:12px;color:#a2b3ac}
+.stchip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:#eef7f2;border:1px solid #bfe0d2;color:#1f6f5c;margin-right:4px}
+.stchip.contact{background:#fdf6e7;border-color:#ecd9ae;color:#7a5a13}
+.stchip.key{background:#fdecea;border-color:#f0c9c4;color:#b42318}
+.stchip.done{background:#f2f2f0;border-color:#dedfd9;color:#6b6f65}
+.tagchip{display:inline-block;font-size:11px;padding:0 6px;border-radius:5px;background:#f4f6fb;border:1px solid #dbe0ee;color:#4f5c82;margin:2px 4px 0 0}
+.notebtn{border:1px dashed #c9dad3;background:#fff;color:#5b7f73;border-radius:6px;padding:2px 8px;font-size:12px;margin-top:5px}
+.notebtn:hover{border-color:var(--green);color:var(--green)}
+.notemeta{font-size:11px;color:#8aa198;margin-top:5px}
+textarea.noteinput{width:100%;min-height:120px;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font:13px/1.55 inherit;resize:vertical}
+.importbox{border:1px dashed #cfe0da;border-radius:10px;padding:12px;background:#fbfdfc;margin-bottom:12px}
+.importlog{max-height:180px;overflow:auto;font:12px/1.6 Consolas,monospace;color:#5c7268;background:#f8fbf9;border-radius:8px;padding:8px 10px;white-space:pre-wrap;margin-top:10px}
 .chip{border:1px solid var(--line);background:#fbfdfc;border-radius:999px;padding:5px 11px;font-size:12px}
 .chip.active{background:var(--green);border-color:var(--green);color:#fff}
 table{width:100%;border-collapse:collapse}
@@ -119,6 +136,9 @@ tr:hover td{background:#fbfdfc}
   </div>
   <div class="spacer"></div>
   <button class="btn solid" onclick="openCollect()">开始采集</button>
+  <button class="btn" onclick="openNotify()">新中标提醒<span id="notifyDot" style="display:none;margin-left:5px;background:#e5484d;color:#fff;border-radius:999px;padding:0 6px;font-size:11px">0</span></button>
+  <button class="btn" onclick="openGovern()">数据治理</button>
+  <button class="btn" onclick="openImport()">数据更新</button>
   <button class="btn" onclick="doExport()">导出 Excel</button>
   <button class="btn" onclick="checkAllAttachments()">附件复检</button>
   <button class="btn" onclick="refreshHealth()">数据源体检</button>
@@ -150,10 +170,23 @@ tr:hover td{background:#fbfdfc}
           <button class="chip" onclick="openTasks()">采集任务</button>
         </div>
         <div class="filters">
-          <input id="q" placeholder="搜索医院 / 项目名称" oninput="debouncedLoad()">
-          <select id="year" onchange="loadRecords()"><option value="">全部年份</option></select>
-          <select id="brand" onchange="loadRecords()"><option value="">全部厂家</option></select>
-          <button class="chip" onclick="resetFilters()">重置</button>
+          <input id="fq" placeholder="关键词：医院 / 项目 / 供应商 / 品牌 / 备注" oninput="debouncedLoad()">
+          <select id="f-hospital" onchange="loadRecords()"><option value="">全部医院</option></select>
+          <select id="f-brand" onchange="loadRecords()"><option value="">全部厂家</option></select>
+          <span class="fsep">日期</span>
+          <input id="f-from" type="date" onchange="loadRecords()">
+          <span class="dash">—</span>
+          <input id="f-to" type="date" onchange="loadRecords()">
+          <span class="fsep">金额(万元)</span>
+          <input id="f-amt-min" type="number" min="0" step="0.1" placeholder="最低" style="width:88px" onchange="loadRecords()">
+          <span class="dash">—</span>
+          <input id="f-amt-max" type="number" min="0" step="0.1" placeholder="最高" style="width:88px" onchange="loadRecords()">
+          <select id="f-note" onchange="loadRecords()">
+            <option value="">备注：全部</option><option value="1">有备注/标签</option><option value="0">无备注/标签</option>
+          </select>
+          <select id="f-tag" onchange="loadRecords()"><option value="">全部标签</option></select>
+          <select id="f-status" onchange="loadRecords()"><option value="">全部状态</option></select>
+          <button class="chip" onclick="resetFilters()">一键清空</button>
           <span class="sub" id="countHint" style="font-size:12px;color:#7a948b"></span>
         </div>
         <div style="overflow:auto">
@@ -161,7 +194,7 @@ tr:hover td{background:#fbfdfc}
             <thead><tr>
               <th style="width:118px">市州 / 医院</th><th>招标项目名称</th><th style="width:150px">中标单位</th>
               <th style="width:96px">HIS 厂家</th><th style="width:104px">中标金额</th><th style="width:92px">中标日期</th>
-              <th style="width:150px">原文 / 附件</th>
+              <th style="width:210px">备注 / 跟进</th><th style="width:150px">原文 / 附件</th>
             </tr></thead>
             <tbody id="rows"></tbody>
           </table>
@@ -244,10 +277,130 @@ tr:hover td{background:#fbfdfc}
   </div>
 </div>
 
+<!-- 备注编辑 -->
+<div class="mask" id="noteMask">
+  <div class="modal" style="width:min(640px,96vw)">
+    <div class="modal-h"><h3 id="noteTitle">备注</h3><button class="btn2" onclick="closeMask('noteMask')">关闭</button></div>
+    <div class="modal-b">
+      <div class="note" id="noteSub" style="margin-bottom:12px"></div>
+      <div class="formrow" style="grid-template-columns:90px 1fr;align-items:start">
+        <label style="padding-top:6px">文字备注</label>
+        <textarea class="noteinput" id="noteText" maxlength="2000" placeholder="例如：已联系信息科，预算已批复，需在 Q2 前完成方案确认"></textarea>
+      </div>
+      <div class="formrow"><label>标签</label><input id="noteTags" placeholder="逗号分隔，如：预算明确,有决策人" maxlength="200"></div>
+      <div class="formrow"><label>处理状态</label><select id="noteStatus"></select></div>
+      <div class="formrow"><label>记录信息</label><div class="note" id="noteMeta">—</div></div>
+      <div class="modal-actions">
+        <button class="btn2" onclick="clearNote()">清空备注</button>
+        <button class="btn2 primary" onclick="saveNote()">保存</button>
+      </div>
+      <div class="note">备注按公告链接保存，重新采集或导入更新不会丢失。</div>
+    </div>
+  </div>
+</div>
+
+<!-- 数据更新 / 导入 -->
+<div class="mask" id="importMask">
+  <div class="modal">
+    <div class="modal-h"><h3>数据更新</h3><button class="btn2" onclick="closeMask('importMask')">关闭</button></div>
+    <div class="modal-b">
+      <div class="importbox">
+        <b>方式一：增量采集</b>
+        <div class="note" style="margin:6px 0 10px">沿用现有采集器（省政采 / 省站群 / 怀化交易中心），遵守限速，可暂停停止；原有备注不受影响。</div>
+        <button class="btn2" onclick="closeMask('importMask');openCollect()">打开采集面板</button>
+      </div>
+      <div class="importbox">
+        <b>方式二：导入 / 更新已有数据（CSV / XLSX）</b>
+        <div class="note" style="margin:6px 0 8px">
+          必填列：公告链接、项目名称；可选列：医院、市州、中标日期、中标单位、HIS厂家、中标金额(元)、备注、标签、处理状态。<br>
+          按「公告链接」合并：已存在公告只更新字段，<b>备注不会被清空</b>；新链接新增记录。
+        </div>
+        <div class="formrow"><label>选择文件</label><input id="importFile" type="file" accept=".csv,.xlsx,.xlsm"></div>
+        <div class="modal-actions" style="justify-content:flex-start">
+          <a class="btn2" href="/api/import/template">下载模板</a>
+          <button class="btn2 primary" onclick="runImport()">开始导入</button>
+        </div>
+        <div class="importlog" id="importLog">尚未导入</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 新中标提醒 -->
+<div class="mask" id="notifyMask">
+  <div class="modal" style="width:min(760px,96vw)">
+    <div class="modal-h"><h3>新中标提醒</h3>
+      <button class="btn2" onclick="markAllNotifications()">全部已读</button>
+      <button class="btn2" onclick="closeMask('notifyMask')">关闭</button>
+    </div>
+    <div class="modal-b"><div id="notifyList">加载中…</div>
+      <div class="note">仅站内提醒，不接外部通知渠道。红点为未读新增命中。</div>
+    </div>
+  </div>
+</div>
+
+<!-- 数据治理：医院主数据 / 待核队列 / 品牌规则 -->
+<div class="mask" id="governMask">
+  <div class="modal" style="width:min(980px,96vw)">
+    <div class="modal-h"><h3>数据治理</h3>
+      <button class="btn2" onclick="closeMask('governMask')">关闭</button>
+    </div>
+    <div class="modal-b">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="chip" id="govTab-hosp" onclick="govTab('hosp')">医院未匹配</button>
+        <button class="chip" id="govTab-review" onclick="govTab('review')">待核中标</button>
+        <button class="chip" id="govTab-rules" onclick="govTab('rules')">品牌规则</button>
+      </div>
+
+      <div id="govHosp">
+        <div class="note" style="margin-bottom:8px">
+          公开渠道未拿到省卫健委完整公立医院名录时，可下载模板自行导入（标记为主数据）；
+          导入后按名称/别名自动给出并入建议，也可手工合并。
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start">
+          <a class="btn2" href="/api/hospitals/master/template">下载医院模板</a>
+          <input id="hospitalFile" type="file" accept=".csv,.xlsx,.xlsm" style="font-size:12px">
+          <button class="btn2 primary" onclick="importHospitalMaster()">导入名录</button>
+        </div>
+        <div class="importlog" id="hospitalImportLog">尚未导入</div>
+        <div id="unmatchedList" style="margin-top:12px">加载中…</div>
+      </div>
+
+      <div id="govReview" style="display:none">
+        <div class="note" style="margin-bottom:8px">
+          集成商（电信/联通/移动/本地集成商）中标时，需正文佐证或人工确认背后 HIS 厂家。
+          规则命中会自动识别，其余进入待核队列。
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start">
+          <span class="sub" id="reviewStats"></span>
+          <button class="btn2 primary" onclick="recomputeBrands()">重算品牌</button>
+        </div>
+        <div id="reviewList" style="margin-top:12px">加载中…</div>
+      </div>
+
+      <div id="govRules" style="display:none">
+        <div class="formrow" style="grid-template-columns:1fr 1fr 90px 70px">
+          <input id="rulePattern" placeholder="匹配内容，如：卫宁健康 或 电信.*HIS">
+          <input id="ruleBrand" placeholder="HIS 厂家，如：卫宁健康">
+          <select id="ruleType"><option value="contains">包含</option><option value="regex">正则</option></select>
+          <input id="rulePriority" type="number" value="1" title="优先级">
+        </div>
+        <div class="modal-actions" style="justify-content:flex-start">
+          <button class="btn2 primary" onclick="addRule()">新增规则</button>
+          <span class="note">规则优先用于供应商名称命中；集成商场景需正文佐证。</span>
+        </div>
+        <div id="rulesList" style="margin-top:12px">加载中…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
-const state = {city:"", brand:"", year:"", q:"", cities:[], records:[]};
+const state = {city:"", hospital:"", brand:"", date_from:"", date_to:"", amount_min:"", amount_max:"",
+  has_note:"", tag:"", status:"", q:"", cities:[], records:[],
+  opts:{hospitals:[],brands:[],tags:[],statuses:[],years:[]}, editing:0};
 const $ = id => document.getElementById(id);
 const fmtMoney = v => v==null ? "未获取" : (v>=1e8 ? (v/1e8).toFixed(2)+" 亿元" : (v/1e4).toFixed(2)+" 万元");
 const esc = s => (s??"").toString().replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
@@ -264,8 +417,9 @@ async function api(url, opt){
 }
 
 async function loadAll(){
-  const d = await api("/api/summary");
+  const [d, fo] = await Promise.all([api("/api/summary"), api("/api/filters")]);
   state.cities = d.cities || [];
+  state.opts = fo || {};
   const q = d.quality || {};
   $("s-ann").textContent = q.announcements || 0;
   $("s-hosp").textContent = q.hospitals || 0;
@@ -277,8 +431,7 @@ async function loadAll(){
   renderBrands(d.brands||[]);
   renderQuality(q);
   renderHealth(d.health||[], []);
-  renderBrandFilter(d.brands||[]);
-  renderYearFilter();
+  renderFilterOptions();
   await loadRecords();
   pollCollect();
 }
@@ -291,7 +444,7 @@ function renderCities(){
       <div class="d">${c.announcements? "近2次 "+c.covered_hospitals+" 家" : "暂无数据"}</div>
     </div>`).join("");
 }
-function pickCity(code){ state.city = state.city===code ? "" : code; renderCities(); loadRecords(); }
+function pickCity(code){ state.city = state.city===code ? "" : code; renderCities(); renderFilterOptions(); loadRecords(); }
 
 function renderBrands(brands){
   const max = Math.max(1, ...brands.map(b=>b.c));
@@ -314,6 +467,7 @@ function renderQuality(q){
   $("quality").innerHTML = `
     <div class="kv"><span>公告总数</span><b>${q.announcements||0}</b></div>
     <div class="kv"><span>医院总数</span><b>${q.hospitals||0}</b></div>
+    <div class="kv"><span>已备注记录</span><b>${q.noted_records||0}</b></div>
     <div class="kv"><span>详情不可达</span><b style="color:${q.detail_unreachable?"#a15c00":"#1f6f5c"}">${q.detail_unreachable||0}</b></div>
     <div class="kv"><span>缺中标金额</span><b style="color:${q.missing_amount?"#a15c00":"#1f6f5c"}">${q.missing_amount||0}</b></div>
     <div class="kv"><span>缺参数/招标附件</span><b style="color:${q.missing_attachment?"#a15c00":"#1f6f5c"}">${q.missing_attachment||0}</b></div>
@@ -332,29 +486,83 @@ function renderHealth(rows, sources){
   }).join("");
 }
 
-function renderBrandFilter(brands){
-  const sel = $("brand");
-  sel.innerHTML = `<option value="">全部厂家</option>` + brands.map(b=>`<option value="${esc(b.b)}">${esc(b.b)}（${b.c}）</option>`).join("");
-  sel.value = state.brand;
+function renderFilterOptions(){
+  const o = state.opts || {};
+  const fill = (sel, placeholder, items, valueOf, labelOf) => {
+    const prev = sel.value;
+    sel.innerHTML = `<option value="">${placeholder}</option>` +
+      items.map(it=>`<option value="${esc(valueOf(it))}">${esc(labelOf(it))}</option>`).join("");
+    if([...sel.options].some(op=>op.value===prev)) sel.value = prev;
+  };
+  // 医院下拉跟随市州联动
+  const hs = (o.hospitals||[]).filter(h=>!state.city || h.city_code===state.city);
+  fill($("f-hospital"), "全部医院", hs, h=>h.id, h=>`${h.name}（${h.announcements}）`);
+  fill($("f-brand"), "全部厂家", o.brands||[], b=>b.b, b=>`${b.b}（${b.c}）`);
+  fill($("f-tag"), "全部标签", o.tags||[], t=>t, t=>t);
+  fill($("f-status"), "全部状态", o.statuses||[], s=>s, s=>s);
 }
-function renderYearFilter(){
-  const sel=$("year"); const nowY=new Date().getFullYear();
-  const years=[]; for(let y=nowY;y>=2015;y--) years.push(y);
-  sel.innerHTML = `<option value="">全部年份</option>` + years.map(y=>`<option>${y}</option>`).join("");
-  sel.value = state.year;
+
+function readFilters(){
+  state.hospital = $("f-hospital").value;
+  state.brand = $("f-brand").value;
+  state.date_from = $("f-from").value;
+  state.date_to = $("f-to").value;
+  state.amount_min = $("f-amt-min").value;
+  state.amount_max = $("f-amt-max").value;
+  state.has_note = $("f-note").value;
+  state.tag = $("f-tag").value;
+  state.status = $("f-status").value;
+  state.q = $("fq").value;
 }
-function resetFilters(){ state.city="";state.brand="";state.year="";state.q=""; $("q").value=""; $("brand").value=""; $("year").value=""; renderCities(); loadRecords(); }
+
+function filterParams(){
+  const p = new URLSearchParams();
+  const keys = {city:"city", hospital:"hospital_id", brand:"brand", date_from:"date_from", date_to:"date_to",
+    amount_min:"amount_min", amount_max:"amount_max", q:"q", has_note:"has_note", tag:"tag", status:"status"};
+  for(const [k, param] of Object.entries(keys)){
+    if(state[k]) p.set(param, state[k]);
+  }
+  return p;
+}
+
+function filterBody(){
+  const body = {};
+  filterParams().forEach((value,key)=>{ body[key]=value; });
+  return body;
+}
+
+function resetFilters(){
+  state.city = "";
+  ["hospital","brand","date_from","date_to","amount_min","amount_max","has_note","tag","status","q"].forEach(k=>{ state[k]=""; });
+  $("fq").value=""; $("f-from").value=""; $("f-to").value=""; $("f-amt-min").value=""; $("f-amt-max").value="";
+  $("f-note").value=""; $("f-hospital").value=""; $("f-brand").value=""; $("f-tag").value=""; $("f-status").value="";
+  renderCities(); renderFilterOptions(); loadRecords();
+}
 
 async function loadRecords(){
-  state.brand = $("brand").value; state.year = $("year").value; state.q = $("q").value;
-  const p = new URLSearchParams();
-  if(state.city) p.set("city",state.city);
-  if(state.brand) p.set("brand",state.brand);
-  if(state.year) p.set("year",state.year);
-  if(state.q) p.set("q",state.q);
-  const d = await api("/api/records?"+p.toString());
+  readFilters();
+  const d = await api("/api/records?"+filterParams().toString());
   state.records = d.rows || [];
   renderRecords();
+}
+
+function statusClass(status){
+  if(!status) return "";
+  if(/重点/.test(status)) return "key";
+  if(/联系|跟进/.test(status)) return "contact";
+  if(/成交|无需|完成/.test(status)) return "done";
+  return "";
+}
+function renderNoteCell(r){
+  const status = r.note_status ? `<span class="stchip ${statusClass(r.note_status)}">${esc(r.note_status)}</span>` : "";
+  const tags = (r.tags||[]).map(t=>`<span class="tagchip">${esc(t)}</span>`).join("");
+  const note = r.note ? `<div class="note-text" title="${esc(r.note)}">${esc(r.note)}</div>` : "";
+  if(!r.has_note){
+    return `<div class="note-empty">暂无备注</div><button class="notebtn" onclick="openNote(${r.announcement_id})">+ 添加备注</button>`;
+  }
+  const meta = r.note_updated_at ? `<div class="notemeta">${esc(r.note_updated_by||"")} · ${esc(r.note_updated_at)}</div>` : "";
+  return `${status}${note}${tags?`<div>${tags}</div>`:""}${meta}
+    <button class="notebtn" onclick="openNote(${r.announcement_id})">编辑备注</button>`;
 }
 
 function renderRecords(){
@@ -364,8 +572,8 @@ function renderRecords(){
   if(!rows.length){
     tbody.innerHTML="";
     empty.style.display="block";
-    empty.innerHTML = state.city || state.brand || state.year || state.q
-      ? "当前筛选条件无记录，试试重置筛选。"
+    empty.innerHTML = filterParams().toString()
+      ? "当前筛选条件无记录，试试一键清空筛选。"
       : `暂无数据。点击右上角“开始采集”执行首批真实采集；当前网络下建议优先跑“湖南省政府网站站群搜索 + 怀化市公共资源交易中心”。`;
     return;
   }
@@ -390,6 +598,7 @@ function renderRecords(){
       <td><span class="brandtag ${brandCls}" title="${r.brand_confidence<0.6?'正文提及，待人工复核':'供应商名称直接命中'}">${esc(r.brand)}${r.brand!=="未识别"&&r.brand_confidence<0.6?' ·待核':''}</span></td>
       <td class="amount">${fmtMoney(r.amount)}</td>
       <td class="amount">${esc(r.publish_date)||"未获取"}</td>
+      <td class="notecell">${renderNoteCell(r)}</td>
       <td><a target="_blank" href="${esc(r.url)}">公告原文</a><div style="margin-top:3px">${attHtml}
         <button class="att add" onclick="openAttachments(${r.announcement_id})">附件管理</button></div></td>
     </tr>`;
@@ -404,10 +613,70 @@ async function openHospital(id){
     const brands = t.brands || "未识别";
     return `<div class="titem">
       <div class="t1"><a target="_blank" href="${esc(t.url)}">${esc(t.title)}</a></div>
-      <div class="t2">${esc(t.publish_date||"未获取")} · ${esc(brands)} · ${fmtMoney(t.amount)} · 附件 ${t.att_count||0}</div>
+      <div class="t2">${esc(t.publish_date||"未获取")} · ${esc(brands)} · ${fmtMoney(t.amount)} · 附件 ${t.att_count||0}${
+        (t.note_status||t.note) ? ` · ${esc(t.note_status||"")}${t.note?"："+esc(t.note):""}` : ""
+      }</div>
     </div>`;
   }).join("") || `<div class="note">暂无记录</div>`;
   $("hospitalMask").classList.add("show");
+}
+
+/* ---------- 备注 ---------- */
+function openNote(annId){
+  const r = state.records.find(x=>x.announcement_id===annId);
+  if(!r) return toast("记录已刷新，请重试");
+  state.editing = annId;
+  $("noteTitle").textContent = "备注 · " + r.hospital_name;
+  $("noteSub").textContent = `${r.title}（${r.publish_date||"日期未获取"}）`;
+  $("noteText").value = r.note || "";
+  $("noteTags").value = (r.tags||[]).join(",");
+  fillStatusSelect(r.note_status || "");
+  $("noteMeta").textContent = r.note_updated_at
+    ? `最近更新：${r.note_updated_at}（${r.note_updated_by||"—"}）` : "尚未填写备注";
+  $("noteMask").classList.add("show");
+  setTimeout(()=>$("noteText").focus(), 80);
+}
+function fillStatusSelect(current){
+  const statuses = [...((state.opts||{}).statuses||[])];
+  if(current && !statuses.includes(current)) statuses.unshift(current);
+  $("noteStatus").innerHTML = `<option value="">未设置</option>` +
+    statuses.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join("");
+  $("noteStatus").value = current || "";
+}
+async function persistNote(payload){
+  if(!state.editing) return;
+  const d = await api(`/api/records/${state.editing}/note`, {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+  });
+  if(!d.ok) return toast(d.error||"保存失败");
+  toast("备注已保存");
+  closeMask("noteMask");
+  await loadAll();
+}
+function saveNote(){
+  persistNote({note:$("noteText").value, tags:$("noteTags").value, status:$("noteStatus").value});
+}
+function clearNote(){
+  if(!confirm("确认清空该记录的备注、标签和处理状态？")) return;
+  persistNote({note:"", tags:"", status:""});
+}
+
+/* ---------- 导入 / 数据更新 ---------- */
+function openImport(){ $("importMask").classList.add("show"); }
+async function runImport(){
+  const f = $("importFile").files[0];
+  if(!f) return toast("请选择 CSV 或 XLSX 文件");
+  const fd = new FormData(); fd.append("file", f);
+  $("importLog").textContent = `正在导入 ${f.name} …`;
+  const resp = await fetch("/api/import", {method:"POST", body:fd});
+  const d = await resp.json();
+  if(!d.ok){ $("importLog").textContent = d.error || "导入失败"; return toast(d.error||"导入失败"); }
+  const lines = [`文件 ${f.name}：共 ${d.rows} 行 · 新增 ${d.inserted} · 更新 ${d.updated} · 跳过 ${d.skipped} · 写入备注 ${d.notes}`];
+  (d.errors||[]).forEach(e=>lines.push("! "+e));
+  $("importLog").textContent = lines.join("\n");
+  toast(`导入完成：新增 ${d.inserted}，更新 ${d.updated}`);
+  $("importFile").value = "";
+  await loadAll();
 }
 
 let attAnnId = 0;
@@ -463,7 +732,8 @@ async function checkAllAttachments(){
 }
 
 function openCollect(){
-  $("srclist").innerHTML = [{id:"hunan_gov_search",name:"湖南省政府网站站群搜索",note:"全省站点关键词发现，实测可用"},
+  $("srclist").innerHTML = [{id:"hunan_ccgp",name:"湖南省政府采购网",note:"省级成交公告，支持关键词+分页，实测可用"},
+    {id:"hunan_gov_search",name:"湖南省政府网站站群搜索",note:"全省站点关键词发现，实测可用"},
     {id:"huaihua_ggzy",name:"怀化市公共资源交易中心",note:"列表+详情，实测可用"},
     {id:"ccgp_national",name:"中国政府采购网",note:"参数可用，本机 IP 被风控；境内网络可试"}]
     .map((s,i)=>`<label class="src"><input type="checkbox" value="${s.id}" ${i<2?"checked":""}>
@@ -483,6 +753,7 @@ async function startCollect(){
 }
 async function ctl(action){ const d=await api("/api/collect/"+action,{method:"POST"}); toast(d.message||d.error||action); }
 
+let polledTaskId = null;
 async function pollCollect(){
   const d = await api("/api/collect/status");
   const box = $("collectLog");
@@ -496,7 +767,7 @@ async function pollCollect(){
     box.textContent = txt;
   }
   if(d.running) setTimeout(pollCollect,2500);
-  else if(d.last){ loadAll(); }
+  else if(d.last && d.task_id !== polledTaskId){ polledTaskId = d.task_id; loadAll(); }
 }
 
 async function refreshHealth(){
@@ -506,8 +777,10 @@ async function refreshHealth(){
 }
 
 async function doExport(){
-  const d = await api("/api/export",{method:"POST"});
-  if(d.ok){ toast("已生成 Excel"); window.location.href = d.download; }
+  readFilters();
+  const d = await api("/api/export",{method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(filterBody())});
+  if(d.ok){ toast(`已生成 Excel（${state.records.length} 条，跟随当前筛选）`); window.location.href = d.download; }
   else toast(d.error||"导出失败");
 }
 
@@ -519,7 +792,153 @@ async function openTasks(){
   $("taskMask").classList.add("show");
 }
 
+async function refreshNotifyDot(){
+  const d = await api("/api/notifications?limit=50");
+  const unread = d.unread || 0;
+  const dot = $("notifyDot");
+  if(dot){ dot.style.display = unread ? "inline-block" : "none"; dot.textContent = unread; }
+}
+
+async function openNotify(){
+  $("notifyMask").classList.add("show");
+  const d = await api("/api/notifications?limit=50");
+  const rows = d.rows || [];
+  $("notifyList").innerHTML = rows.length ? `<table class="mini"><thead><tr>
+      <th style="width:96px">时间</th><th>医院</th><th>项目</th><th style="width:110px">厂家</th><th style="width:66px"></th>
+    </tr></thead><tbody>` + rows.map(n=>`<tr>
+      <td>${esc((n.created_at||"").slice(0,16))}</td>
+      <td>${esc(n.hospital_name||"未归属")}</td>
+      <td><a href="${esc(n.url)}" target="_blank">${esc(n.title||"")}</a></td>
+      <td>${esc(n.brand_name||"未识别")}</td>
+      <td>${n.is_read? '<span class="okbg">已读</span>' : '<span class="badg">新</span>'}</td></tr>`).join("") + "</tbody></table>"
+    : '<div class="note">暂无新增中标提醒。</div>';
+  await refreshNotifyDot();
+}
+
+async function markAllNotifications(){
+  await api("/api/notifications/read",{method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+  toast("已全部标记为已读");
+  await openNotify();
+}
+
+function openGovern(){ $("governMask").classList.add("show"); govTab("hosp"); }
+
+function govTab(name){
+  ["hosp","review","rules"].forEach(k=>{
+    $("govTab-"+k).classList.toggle("active", k===name);
+    $("gov"+k[0].toUpperCase()+k.slice(1)).style.display = k===name ? "" : "none";
+  });
+  if(name==="hosp") loadUnmatched();
+  if(name==="review") loadReview();
+  if(name==="rules") loadRules();
+}
+
+async function loadUnmatched(){
+  $("unmatchedList").textContent = "加载中…";
+  const d = await api("/api/hospitals/unmatched");
+  const byId = {}; (d.suggestions||[]).forEach(s=>byId[s.id]=s.suggestion);
+  const rows = d.rows || [];
+  $("unmatchedList").innerHTML = rows.length ? `<table class="mini"><thead><tr>
+      <th>采集医院</th><th style="width:80px">市州</th><th style="width:60px">公告</th>
+      <th style="width:200px">建议并入</th><th style="width:190px">手工合并</th></tr></thead><tbody>` +
+    rows.map(r=>{
+      const sug = byId[r.id];
+      const sugHtml = sug ? `<span class="okbg">${esc(sug.name)}（${(sug.score*100).toFixed(0)}%）</span>
+          <button class="notebtn" onclick="mergeHospital(${r.id},${sug.id})">采纳</button>` : '<span class="note-empty">无建议</span>';
+      return `<tr><td>${esc(r.name)}</td><td>${esc(r.city||"")}</td><td>${r.ann_count||0}</td>
+        <td>${sugHtml}</td>
+        <td><input id="mh-${r.id}" placeholder="目标医院ID" style="width:86px">
+          <button class="notebtn" onclick="mergeHospital(${r.id})">并入</button></td></tr>`;
+    }).join("") + "</tbody></table>"
+    : '<div class="note">暂无未匹配医院。导入医院名录后会在此显示需要归并的记录。</div>';
+}
+
+async function importHospitalMaster(){
+  const f = $("hospitalFile").files[0];
+  if(!f){ toast("请选择医院名录文件"); return; }
+  const fd = new FormData(); fd.append("file", f);
+  const d = await api("/api/hospitals/master/import",{method:"POST", body:fd});
+  $("hospitalImportLog").textContent = d.ok
+    ? `导入完成：新增 ${d.added}，更新 ${d.updated}，跳过 ${d.skipped}`
+      + ((d.errors&&d.errors.length) ? "\n" + d.errors.join("\n") : "")
+    : ("导入失败：" + (d.error||""));
+  if(d.ok){ toast("名录已导入"); loadUnmatched(); loadAll(); }
+}
+
+async function mergeHospital(sourceId, targetId){
+  const target = targetId || Number(($("mh-"+sourceId)||{}).value || 0);
+  if(!target){ toast("请填写目标医院ID"); return; }
+  const d = await api("/api/hospitals/merge",{method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({source_id:sourceId, target_id:target})});
+  if(d.ok){ toast("已合并"); loadUnmatched(); loadAll(); } else toast(d.error||"合并失败");
+}
+
+async function loadReview(){
+  const d = await api("/api/review/queue");
+  const s = d.stats || {};
+  $("reviewStats").textContent = `中标记录 ${s.awards||0} 条 · 未识别 ${s.unknown||0} 条（${((s.ratio||0)*100).toFixed(1)}%）· 待核 ${s.pending||0} 条`;
+  const rows = d.rows || [];
+  $("reviewList").innerHTML = rows.length ? `<table class="mini"><thead><tr>
+      <th>医院 / 项目</th><th style="width:170px">中标供应商</th><th style="width:88px">金额</th>
+      <th style="width:170px">依据</th><th style="width:210px">确认厂家</th></tr></thead><tbody>` +
+    rows.map(r=>`<tr>
+      <td>${esc(r.hospital_name||"")}<div class="note-empty">${esc((r.title||"").slice(0,40))}</div></td>
+      <td>${esc(r.supplier_raw||"未获取")}<div class="note-empty">${esc(r.package_no||"")}</div></td>
+      <td>${fmtMoney(r.amount_yuan)}</td>
+      <td class="note-empty">${esc(r.brand_basis||"")}</td>
+      <td><input id="rb-${r.award_id}" placeholder="厂家名称" style="width:118px">
+        <button class="notebtn" onclick="confirmBrand(${r.award_id})">确认</button></td></tr>`).join("")
+      + "</tbody></table>"
+    : '<div class="note">没有待核记录。</div>';
+}
+
+async function confirmBrand(awardId){
+  const brand = ($("rb-"+awardId)||{}).value || "";
+  if(!brand.trim()){ toast("请填写厂家名称"); return; }
+  const d = await api(`/api/review/${awardId}/confirm`,{method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify({brand})});
+  if(d.ok){ toast("已确认"); loadReview(); loadAll(); } else toast(d.error||"确认失败");
+}
+
+async function recomputeBrands(){
+  toast("正在按包件与集成商规则重算…");
+  const d = await api("/api/review/recompute",{method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
+  if(d.ok){
+    toast(`重算完成：更新 ${d.updated} 条，待核 ${d.pending} 条，未识别 ${((d.stats&&d.stats.ratio)||0)*100}%`);
+    loadReview(); loadAll();
+  } else toast(d.error||"重算失败");
+}
+
+async function loadRules(){
+  const d = await api("/api/rules");
+  const rows = d.rows || [];
+  $("rulesList").innerHTML = `<table class="mini"><thead><tr>
+      <th style="width:64px">优先级</th><th>匹配内容</th><th>类型</th><th>厂家</th><th style="width:110px"></th>
+    </tr></thead><tbody>` + (rows.map(r=>`<tr>
+      <td>${r.priority}</td><td>${esc(r.pattern)}</td><td>${r.match_type==="regex"?"正则":"包含"}</td>
+      <td>${esc(r.brand_name)}</td>
+      <td><button class="notebtn" onclick="delRule(${r.id})">删除</button></td></tr>`).join("")
+      || '<tr><td colspan="5" class="note-empty">暂无规则</td></tr>') + "</tbody></table>";
+}
+
+async function addRule(){
+  const pattern = ($("rulePattern").value||"").trim();
+  const brand_name = ($("ruleBrand").value||"").trim();
+  if(!pattern || !brand_name){ toast("请填写匹配内容与厂家"); return; }
+  const d = await api("/api/rules",{method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({pattern, brand_name, match_type:$("ruleType").value, priority:Number($("rulePriority").value||1)})});
+  if(d.ok){ $("rulePattern").value=""; $("ruleBrand").value=""; toast("规则已新增"); loadRules(); }
+  else toast(d.error||"新增失败");
+}
+
+async function delRule(id){
+  await api(`/api/rules/${id}`,{method:"DELETE"});
+  toast("规则已删除"); loadRules();
+}
+
 loadAll();
+refreshNotifyDot();
+setInterval(refreshNotifyDot, 60000);
 </script>
 </body>
 </html>
