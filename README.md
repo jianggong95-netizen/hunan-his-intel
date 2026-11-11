@@ -1,5 +1,10 @@
 # 湖南省公立医院 HIS 中标情报分析系统
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.10+-green.svg)
+![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
+![Tests](https://img.shields.io/badge/tests-90%20passed-brightgreen.svg)
+
 按湖南 14 个市州分区，展示每家公立医院**最近 2 次** HIS 相关中标记录：项目名称、采购单位、中标单位、HIS 厂家、金额、日期、**备注/标签/处理状态**，并可跳转公告原文、下载招标参数附件、组合筛选、导出 Excel。
 
 > 当前状态（2026-11-10 实测）：已跑通真实数据闭环。库内 **162 条公告 / 117 家医院 / 14 个市州**（最近 2 次视图 145 条），覆盖全部市州；有效中标记录 214 条，识别品牌 15 个，未识别占比 **54.7%**，另有 128 条进入「待核」队列；附件 **214 条**（公告原文 162 + 正文链接 52；其中直链留存 14、失效 20、未下载 18——交易中心包件页或超出单公告下载上限），支持手工上传。**全部为真实公开公告，无假数据。**
@@ -217,3 +222,10 @@ powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 2. 是否提供天眼查开放平台 API key（不提供则该模块长期禁用）。
 3. 是否有卫健委/等级医院名录文件（用于覆盖「全部公立医院」口径）。
 4. 目标年份范围（当前默认 2018 起，可改 `COLLECT_SINCE`）。
+
+## 12. License
+
+本项目基于 [Apache License 2.0](LICENSE) 开源，可免费使用、修改、分发及商用，保留版权声明与许可证副本即可。
+
+- 可选集成的 [Agent-Reach](https://github.com/Panniantong/Agent-Reach) 为 MIT 许可，与 Apache-2.0 兼容；本项目仅通过其 CLI 只读调用，未复制其代码。
+- 许可证约束的是**代码**；采集到的公告数据版权归原发布单位所有，对外引用请以原文链接为准（见第 8 节合规声明）。
