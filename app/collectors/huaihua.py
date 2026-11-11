@@ -69,11 +69,12 @@ class HuaihuaCollector:
             return None
         return parse_detail(resp.text, url)
 
-    def collect(self, since: str | None = None, max_pages: int | None = None) -> list[dict]:
+    def collect(self, since: str | None = None, max_pages: int | None = None,
+                start_page: int = 1, on_page=None) -> list[dict]:
         since = since or config.COLLECT_SINCE
         max_pages = max_pages or 40
         out: list[dict] = []
-        page = 1
+        page = max(1, start_page)
         total = None
         fails = 0
         while page <= (total or max_pages):
@@ -93,6 +94,8 @@ class HuaihuaCollector:
                 continue
             fails = 0
             out.extend(items)
+            if on_page:
+                on_page(page)
             oldest = min((i["publish_date"] or "9999-99-99") for i in items)
             if oldest <= since:
                 break

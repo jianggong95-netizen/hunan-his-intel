@@ -5,9 +5,18 @@ import json
 import re
 
 from .db import db, now
+from .page_extract import FIELD_LABELS
 from .regions import CITIES
 
 NOTE_STATUSES = ("跟进中", "已联系", "重点客户", "已成交", "待评估", "无需跟进")
+
+
+def _json_obj(value, default):
+    try:
+        parsed = json.loads(value or "")
+    except (TypeError, ValueError):
+        return default
+    return parsed if isinstance(parsed, type(default)) else default
 
 
 def _city_map(conn) -> dict[str, str]:
@@ -101,7 +110,8 @@ def latest_two(filters: dict | None = None) -> list[dict]:
             ids = [int(x) for x in (row["ids"] or str(row["id"])).split(",") if x]
             marks = ",".join("?" * len(ids))
             awards = conn.execute(
-                f"SELECT supplier_raw, brand_name, brand_confidence, amount_yuan FROM awards "
+                f"SELECT supplier_raw, brand_name, brand_confidence, amount_yuan, amount_cents, "
+                f"amount_kind, tax_included, amount_basis, missing_reason FROM awards "
                 f"WHERE announcement_id IN ({marks}) AND is_winner=1",
                 ids,
             ).fetchall()
@@ -120,6 +130,8 @@ def latest_two(filters: dict | None = None) -> list[dict]:
                 ids,
             ).fetchall()
             amount = max(amounts) if amounts else None
+            meta = _json_obj(row["extract_meta"], {})
+            missing = meta.get("missing_reasons") or {}
             note_text = row["note_text"] or ""
             tags = [t for t in (row["note_tags"] or "").split(",") if t]
             note_status = row["note_status"] or ""
@@ -154,6 +166,17 @@ def latest_two(filters: dict | None = None) -> list[dict]:
                     "announcement_id": row["id"],
                     "announcement_ids": ids,
                     "package_count": len(ids),
+                    "source_count": row["source_count"] or 1,
+                    "alt_sources": _json_obj(row["alt_sources"], []),
+                    "project_no": row["project_no"] or "",
+                    "agency": row["agency"] or "",
+                    "missing_reasons": missing,
+                    "missing_labels": [FIELD_LABELS.get(k, k) for k in missing],
+                    "amount_kind": next((a["amount_kind"] for a in awards if a["amount_kind"]), ""),
+                    "amount_cents": int(round(amount * 100)) if amount is not None else None,
+                    "tax_included": next(
+                        (a["tax_included"] for a in awards if a["tax_included"] is not None), None),
+                    "award_missing": [a["missing_reason"] for a in awards if a["missing_reason"]],
                     "hospital_id": row["hospital_id"],
                     "hospital_name": row["hospital_name"],
                     "city_code": row["city_code"],
@@ -335,8 +358,10 @@ def quality_stats() -> dict:
             "SELECT COUNT(*) c FROM record_notes WHERE trim(COALESCE(note,''))<>'' "
             "OR trim(COALESCE(tags,''))<>'' OR trim(COALESCE(status,''))<>''"
         ).fetchone()["c"]
+        low_rel = conn.execute("SELECT COUNT(*) c FROM low_relevance").fetchone()["c"]
         return {
             "noted_records": noted,
+            "low_relevance": low_rel,
             "announcements": total_ann,
             "hospitals": total_h,
             "detail_unreachable": unreachable,
@@ -411,6 +436,26 @@ def task_logs(task_id: int, limit: int = 200) -> list[dict]:
 def source_health() -> list[dict]:
     with db() as conn:
         rows = conn.execute("SELECT * FROM source_health ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+
+def query_trace(limit: int = 200) -> list[dict]:
+    """最近的查询级诊断：每个关键词在哪些源、返回多少、去重多少、耗时多少。"""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, task_id, keyword, source, status, returned, kept, dropped, elapsed_ms, "
+            "error_kind, error, created_at FROM query_trace ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def low_relevance_list(limit: int = 200) -> list[dict]:
+    """低相关待核队列：评分不足未进主表的候选公告。"""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, url, title, source_site, source_name, keyword, score, reason, publish_date, "
+            "last_seen_at FROM low_relevance ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
         return [dict(r) for r in rows]
 
 

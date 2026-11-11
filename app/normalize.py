@@ -198,14 +198,23 @@ def match_brand(supplier: str, full_text: str, allow_text: bool = True) -> tuple
     return None, 0.0, "未识别"
 
 
+def _kw_hit(keyword: str, text: str) -> bool:
+    """纯英文关键词按词边界匹配，避免 HIS 命中 THIS、LIS 命中 ANALYSIS。"""
+    if not text:
+        return False
+    if keyword.isascii() and keyword.replace(" ", "").isalnum():
+        return re.search(rf"(?<![a-z0-9]){re.escape(keyword.lower())}(?![a-z0-9])", text.lower()) is not None
+    return keyword.lower() in text.lower()
+
+
 def his_relevance(title: str, text: str) -> tuple[float, list[str]]:
     """标题命中权重 3，正文 1；返回分数与命中词。"""
     keywords = config.load_keywords()
     matched: list[str] = []
     score = 0.0
     for kw in keywords:
-        in_title = kw.lower() in (title or "").lower()
-        in_text = kw.lower() in (text or "").lower()
+        in_title = _kw_hit(kw, title)
+        in_text = _kw_hit(kw, text)
         if in_title or in_text:
             matched.append(kw)
             score += 3 if in_title else 1

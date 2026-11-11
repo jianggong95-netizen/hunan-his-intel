@@ -2,7 +2,7 @@
 
 按湖南 14 个市州分区，展示每家公立医院**最近 2 次** HIS 相关中标记录：项目名称、采购单位、中标单位、HIS 厂家、金额、日期、**备注/标签/处理状态**，并可跳转公告原文、下载招标参数附件、组合筛选、导出 Excel。
 
-> 当前状态（2026-11-09 实测）：已跑通真实数据闭环。库内 **120 条公告 / 92 家医院 / 14 个市州**（最近 2 次视图 100+ 条），覆盖全部市州；有效中标记录 164 条，识别品牌 16 个（新增创星科技、北大医信、联医科技、长信畅中、医沃、创智和宇），未识别占比 **48.8%**，另有 103 条进入「待核」队列；附件 120 条（均为公告原文，参数/招标文件暂无公开源，支持手工上传）。**全部为真实公开公告，无假数据。**
+> 当前状态（2026-11-10 实测）：已跑通真实数据闭环。库内 **162 条公告 / 117 家医院 / 14 个市州**（最近 2 次视图 145 条），覆盖全部市州；有效中标记录 214 条，识别品牌 15 个，未识别占比 **54.7%**，另有 128 条进入「待核」队列；附件 **214 条**（公告原文 162 + 正文链接 52；其中直链留存 14、失效 20、未下载 18——交易中心包件页或超出单公告下载上限），支持手工上传。**全部为真实公开公告，无假数据。**
 
 ---
 
@@ -36,9 +36,13 @@ python main.py serve          # 启动 Web，默认 http://127.0.0.1:8765
 python main.py collect --pages 3 --since 2023-01-01
 python main.py collect --sources huaihua_ggzy
 python main.py collect --keywords "医院信息系统,HIS系统"
+python main.py collect --resume              # 从上次中断的页/站点群继续
+python main.py crawl-state                   # 查看源冷却/失败归因/断点游标；--reset hunan_ccgp 清零冷却
+python main.py fill-attachments --source hunan_ccgp --limit 50   # 从正文/交易中心页回补附件
 python main.py import-hospitals 医院名录.csv   # 列名：name,city,level,source；加 --master 标记为主数据
 python main.py hospital-unmatched               # 未匹配医院 + 归并建议
 python main.py brand-recompute                  # 按包件/集成商规则重算品牌
+python main.py reparse --limit 50               # 按详情页表格回补金额/包件/第一中标候选人
 python main.py check-attachments --limit 50     # 复检附件失效
 python main.py import-records 中标数据.xlsx     # 列名：公告链接,项目名称,医院,市州,中标日期,中标单位,HIS厂家,中标金额(元),备注,标签,处理状态
 python main.py stats                            # 控制台输出质量/市州/品牌统计
@@ -81,7 +85,7 @@ python main.py stats                            # 控制台输出质量/市州/�
 | 湖南省政府网站站群搜索 `searching.hunan.gov.cn` | **可用** | 按 14 市州站群 scope + `searchfields=title` 检索；时间过滤参数失效，改为本地 `COLLECT_SINCE` 过滤 |
 | 怀化市公共资源交易中心 `ggzy.huaihua.gov.cn` | **可用** | 列表 `/c116113/list_N.shtml` 分页 + 详情正文，字段含中标单位/金额 |
 | 中国政府采购网 `search.ccgp.gov.cn` | **参数可用，当前 IP 被风控** | 返回「访问过于频繁」；附件直链 403。需境内网络/合规出口重试，不绕过 |
-| 湖南省政府采购网 `ccgp-hunan.gov.cn` | **可用** | 2026-11-08 实测可检索/解析，已作为默认源；按「中标公告 + 标题含医院/HIS 关键词」过滤 |
+| 湖南省政府采购网 `ccgp-hunan.gov.cn` | **可用** | 2026-11-10 实测可检索/解析，已作为默认源；按查询计划检索「医院信息 / 信息系统 / 电子病历 / HIS / PACS / LIS / 互联网医院 / 智慧医院 / 医保移动支付 / 银医」，再按「中标公告 + 标题含医院/HIS 关键词」过滤。详情接口的 `attachmentList` 多数为空，但正文里仍有 OSS 直链与交易中心包件页，已由 `fill-attachments` 回补；OSS 返回 510/失效链接只标 `download_failed`，不绕过 |
 | 各市州交易中心（岳阳/益阳/郴州等） | **部分可用** | 站群搜索可发现其公告链接；直连详情受站点可达性影响 |
 | 永州市公共资源交易中心 `ggzy.yzcity.gov.cn` | **详情可用，命中少** | 中标公示正文含真实「招标文件」附件直链（`downloadFile?fileid=`）；近 24 页未见医院 HIS 项目，暂不列为常规源 |
 | 中国招标投标公共服务平台 `cebpubservice.com` | **不可自动化** | 接口返回 `success:false`，页面为 JS/签名，未接入 |
@@ -93,7 +97,12 @@ python main.py stats                            # 控制台输出质量/市州/�
 
 ## 4. 取数口径
 
-- **HIS 相关**：标题命中关键词得 3 分、正文命中得 1 分，总分 ≥ 3 才入库。关键词在 `config/his_keywords.txt`，可增删。
+- **检索编排**：`app/search_plan.py` 按站点能力把关键词展开成查询计划（省政采：核心词「医院信息 / 信息系统 / 电子病历 / HIS」+ 院内业务系统词「PACS / LIS / 互联网医院 / 智慧医院 / 医保移动支付 / 银医」；站群搜索：前 3 个关键词 × 15 个站点群；怀化：栏目翻页）。候选先按 HIS 相关度排序，再做 URL 去重与跨源去重（标题归一 + 发布日期 + 采购单位，另查库内其他来源同题同日公告），最后逐条解析入库。思路借鉴 Agent-Reach 的处理顺序（有序后端、失败分类），未复制其代码。
+- **结构化抽取**：入库时优先解析详情页表格——表头式（包号/中标供应商/中标金额）逐包件入库，标签式（`中标供应商 | 某某公司`）取字段，候选人公示表只取排名第一的候选人；拿不到表格才退回文本正则。第一中标候选人的金额来自「投标报价」，`amount_raw` 会标注「（第一中标候选人报价）」，不把它伪装成已定标金额。
+- **失败归因与冷却**：`app/source_state.py` 把请求失败分为 `blocked / robots / rate_limited / upstream_broken / network / timeout / parse / http`，按类型和连续失败次数冷却（风控 1 小时起、限流 5 分钟起、超时 1 分钟起），状态写入 `source_runtime`；`collect` 每个源执行前先查冷却，冷却期内直接跳过并在任务统计里记 `cooldown_skipped`，确认站点恢复后用 `crawl-state --reset <源>` 手动清零。被封站点只标记、不换 IP/不绕验证码。
+- **断点续采**：每个查询/站群的翻页进度写入 `crawl_cursor`，`collect --resume` 从游标处继续；正常跑完即删除对应游标，中断（停止/异常）则保留。默认 `collect` 仍从第一页开始，不改变原有全量行为。
+- **附件补齐**：`fill-attachments` 回读公告详情，除 `attachmentList` 外还解析正文 `<a>`——OSS 直链、`downloadFile?fileid=` 下载接口直接下载留存；交易中心包件页等非直链只登记为 `source=body_link, status=unverified` 并写备注，不强行抓取；失效/510/404 统一标 `download_failed`，不补造文件。附件发现顺序参考 Agent-Reach 的 public-first 思路（先读公开公告正文，再考虑人工上传），未复制代码。
+- **HIS 相关**：标题命中关键词得 3 分、正文命中得 1 分，总分 ≥ 3 才入库；纯英文关键词（HIS / PACS / LIS）按词边界匹配，避免误命中 THIS、ANALYSIS。关键词在 `config/his_keywords.txt`，可增删。
 - **中标公告**：标题/类型须为中标的公告；「流标/废标/终止/更正」排除。
 - **最近 2 次**：按医院分组，先按（医院, 中标日期）合并同一天多包，再按日期倒序取前 2 个日期；同一天的全部包件公告记录合并展示（页面显示包件数），金额取当日最大包件金额，中标单位/品牌去重合并；`is_void=1` 排除；无日期的公告按 id 各自保留，不并入同一天。
 - **去重**：`announcements.url` 唯一；`content_hash`（去空白后的全文 SHA256）用于识别同一 URL 内容变更，变更写 `change_history`。
@@ -111,6 +120,9 @@ tianyancha/
 │  ├─ normalize.py        医院名/金额/供应商/品牌/相关度归一
 │  ├─ regions.py          14 市州、区县映射、站群 scope、市州判定
 │  ├─ pipeline.py         采集→解析→去重→入库→附件留存
+│  ├─ search_plan.py      多源检索编排：查询计划、跨源去重、相关度排序
+│  ├─ source_state.py     失败归因、分站点冷却退避、断点续采游标
+│  ├─ page_extract.py     详情页结构化抽取：表格包件、标签字段、第一候选人、金额单元格
 │  ├─ aggregate.py        最近 2 次、市州汇总、品牌份额、质量统计、待核/通知/未匹配
 │  ├─ export.py           Excel 导出（4 sheet，含备注/附件链接列，支持筛选）
 │  ├─ importer.py         CSV/XLSX 导入（按公告链接合并、备注保留）
@@ -118,9 +130,12 @@ tianyancha/
 │  ├─ hospital_master.py  医院名录模板、导入、别名归并建议与手工合并
 │  ├─ brands_ops.py       包件拆分、集成商识别、品牌重算、待核确认、规则维护
 │  ├─ tianyancha.py       天眼查开放平台 API 占位
+│  ├─ agent_reach.py      Agent-Reach 只读回退通道适配（可选，未装自动降级）
+│  ├─ version.py          版本号与 GitHub Releases 更新检查
 │  ├─ web.py              Flask 路由 / API / 登录 / 审计
 │  ├─ collectors/         站点适配器（省政采、站群搜索、怀化、国政采、详情解析）
 │  └─ templates/index.html 单页仪表盘（原生 JS，无外部 CDN）
+├─ assets/                应用图标 app.ico（exe/任务栏/favicon 统一）
 ├─ config/                关键词、品牌、供应商→品牌规则
 ├─ data/                  SQLite、附件、导出（运行时生成，不入库）
 ├─ docs/数据字典.md        表结构、字段、枚举、口径
@@ -147,16 +162,30 @@ tianyancha/
 | `MAX_UPLOAD_MB` | 50 | 手工上传参数文件的单文件大小上限（MB） |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | admin / admin123 | 初始管理员 |
 | `TYC_API_KEY` | 空 | 天眼查开放平台 key，空=模块禁用 |
+| `AGENT_REACH_ENABLED` | 1 | Agent-Reach 回退通道开关（0=禁用） |
+| `AGENT_REACH_TIMEOUT_SEC` | 60 | 单次 agent-reach CLI 调用超时 |
 
 `.env` 已在 `.gitignore` 中，不会入库。
 
-## 7. Windows 可执行程序
+## 7. Windows 可执行程序与版本升级
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 ```
 
-产物在 `dist\his-intel\`：`his-intel.exe` 为服务入口（`his-intel.exe serve`），同目录需保留 `config\`、`.env`、`data\`。模板与配置已随包打入，仍建议把 `config/` 放在 exe 同级以便人工维护品牌与关键词。
+- 产物：`dist\his-intel\his-intel.exe`（服务入口 `his-intel.exe serve`）+ 版本化升级包 `dist\his-intel-vX.Y.Z-win64.zip`（exe 已嵌入 `assets\app.ico` 多尺寸图标）。
+- 版本号唯一定义在 `app/version.py`；`his-intel.exe version` 显示当前版本并联网检查 GitHub Releases 最新版，`--no-check` 只看本地；页面标题旁版本徽标点击同样触发检查。
+- **升级方式**：下载最新 zip，解压覆盖旧的 `his-intel` 目录即可。`data\`（数据库/附件/导出）不在 zip 内不会被覆盖；`config\` 与 `.env` 覆盖安装时保留本地版本（zip 内不含二者时自动跳过）。
+- 发布流程：改 `app/version.py` → 跑 `build_exe.ps1` → `gh release create vX.Y.Z dist\his-intel-vX.Y.Z-win64.zip`。
+
+## 7.1 Agent-Reach 回退通道（数据采集增强）
+
+本项目已实际集成 [Panniantong/Agent-Reach](https://github.com/Panniantong/Agent-Reach)（MIT）作为**可选只读回退通道**（`app/agent_reach.py`）：
+
+- 详情页直连失败（`detail_unreachable`，如 JS 渲染、IP 风控）时，自动调用 `agent-reach read <url>`（底层 Jina Reader → Exa 有序回退）读取正文兜底；成功后正常走解析入库，`extract_meta.agent_reach_fallback=true` 可追溯，正文里的 pdf/docx 等直链同时登记为附件。
+- 数据源体检新增「Agent-Reach 通道」行：未安装/禁用/可用状态如实显示；`his-intel.exe agent-reach` 查看状态。
+- **未安装 CLI 时全部静默降级，采集行为与原来完全一致**；安装方式见官方仓库 `docs/install.md`（注意：PyPI 上的 `agent-reach` 是冒名包，禁止 pip 安装）。
+- 合规边界不变：仅只读公开页面，不绕验证码、不采个人信息。
 
 ## 8. 合规声明
 
@@ -169,9 +198,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 
 1. `search.ccgp.gov.cn` 对当前出口 IP 返回风控；需境内网络环境重跑，系统已如实标记 `detail_unreachable`，不影响其余源。
 2. 政府站群时间过滤参数无效，按 `COLLECT_SINCE` 本地过滤，翻页越深命中越少。
-3. **参数/招标文件暂无自动来源**：省政采中标公告的 `attachmentList` 为空（抽查 40 条医院类公告均无附件）；永州交易中心有真实附件直链但近期无医院 HIS 项目。因此当前 120 条附件均为「中标公告原文」，参数文件请用页面「附件管理」手工上传（已记录类型/SHA256/上传人/审计，支持失效复检）。附件解析器已支持 pdf/doc/docx/xls/xlsx/zip/rar/ofd。
+3. **参数/招标文件获取受站点限制**：省政采中标公告的 `attachmentList` 多数为空，但正文仍含 OSS 直链和交易中心包件页；`fill-attachments` 回补 144 条公告后发现正文链接 52 条，其中直链留存 14 条、20 条因 OSS 返回 510/404 失效（只标 `download_failed`，不绕过）、18 条为交易中心包件页/超出单公告 3 个下载上限（只登记不硬抓）。当前「招标文件」类仅 6 条（2 条有效），参数文件仍主要靠页面「附件管理」手工上传（已记录类型/SHA256/上传人/审计，支持失效复检）。附件解析器支持 pdf/doc/docx/xls/xlsx/zip/rar/ofd。直连失败的详情页另走 Agent-Reach 只读回退通道（见 7.1）。
 4. 医院主数据为采集发现式；省卫健委未见可直接下载的完整名录，需用 `/api/hospitals/master/template` 模板导入，导入后自动给出归并建议并可手工合并。
-5. 品牌识别为规则 + 人工确认：未识别 80/164（48.8%），其中大量为运营商/集成商中标、正文无厂家佐证，已进入「待核」队列（103 条），不强行归因。
+5. 品牌识别为规则 + 人工确认：未识别 117/214（54.7%），其中大量为运营商/集成商中标、正文无厂家佐证，已进入「待核」队列（128 条），不强行归因。
 6. 「最近 2 次」的同日多包已合并计数，但历史数据中部分公告正文未逐包列供应商，包件级拆分以正文明确出现「包N」时为限。
 
 ## 10. 后续增强（本轮未做）

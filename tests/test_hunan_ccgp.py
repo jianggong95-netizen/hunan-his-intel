@@ -100,7 +100,10 @@ class HunanCcgpTest(unittest.TestCase):
             return FakeResponse({}, status_code=404)
 
         self.calls = calls
-        return HunanCcgpCollector(SimpleNamespace(get=fake_get), lambda msg, level="info": None)
+        return HunanCcgpCollector(
+            SimpleNamespace(get=fake_get, record_error=lambda kind, msg: None),
+            lambda msg, level="info": None,
+        )
 
     def test_search_filters_non_hospital_non_award_and_invalid(self):
         collector = self._collector()
@@ -136,6 +139,37 @@ class HunanCcgpTest(unittest.TestCase):
         methods = [c["method"] for c in self.calls]
         self.assertEqual(methods, ["POST", "GET"])
         self.assertEqual(self.calls[0]["json"]["keyword"], "医院信息系统")
+
+    def test_enrich_flags_detail_without_hospital(self):
+        payload = {"result": {"data": {"content": "<p>供应商名称：某某科技有限公司</p>", "attachmentList": []}}}
+        collector = self._collector(detail_payload=payload)
+        item = collector.enrich({"article_id": "A1", "title": "某医院信息系统", "publish_date": "2025-06-01"})
+        self.assertFalse(item["hospital_in_text"])
+        self.assertEqual(item["supplier_override"], "某某科技有限公司")
+
+    def test_search_resumes_from_start_page(self):
+        collector = self._collector()
+        pages = []
+        items = collector.search("医院信息系统", max_pages=3, start_page=2, on_page=pages.append)
+        self.assertEqual(pages, [2, 3])
+        self.assertEqual([c["json"]["pageNo"] for c in self.calls], [2, 3])
+        self.assertEqual([i["article_id"] for i in items], ["A1"])
+
+    def test_detail_merges_body_attachment_links(self):
+        payload = {
+            "result": {
+                "data": {
+                    "content": "<p>附件：<a href=\"http://changd.ccgp-hunan.gov.cn/f/m/pkg_detail/pkg_1\">包件</a></p>",
+                    "attachmentList": [{"fileName": "参数.pdf", "fileUrl": "http://example.com/param.pdf"}],
+                }
+            }
+        }
+        collector = self._collector(detail_payload=payload)
+        data = collector._detail_data("A1")
+        self.assertEqual(len(data["attachments"]), 2)
+        by_source = {att["source"]: att for att in data["attachments"]}
+        self.assertTrue(by_source["api"]["direct"])
+        self.assertFalse(by_source["body_link"]["direct"])
 
     def test_broken_json_returns_empty(self):
         collector = self._collector(list_payload=ValueError("bad json"))

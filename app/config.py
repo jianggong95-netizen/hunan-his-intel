@@ -16,7 +16,8 @@ else:
 def _load_env(path: Path) -> None:
     if not path.exists():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    # utf-8-sig：兼容带 BOM 的 .env（Windows 记事本/PowerShell 常见），否则首个键名会混入 \\ufeff 而静默失效
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -64,6 +65,10 @@ ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "admin123")
 TYC_API_KEY = _env("TYC_API_KEY", "")
 TYC_BASE_URL = _env("TYC_BASE_URL", "https://open.api.tianyancha.com")
 
+# Agent-Reach 可选通道（github.com/Panniantong/Agent-Reach，只读回退；未安装自动降级）
+AGENT_REACH_ENABLED = _env("AGENT_REACH_ENABLED", "1") == "1"
+AGENT_REACH_TIMEOUT_SEC = int(_env("AGENT_REACH_TIMEOUT_SEC", "60"))
+
 for _d in (DB_PATH.parent, ATTACHMENT_DIR, EXPORT_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
@@ -73,7 +78,7 @@ def load_keywords() -> list[str]:
     if not path.exists():
         return ["HIS", "医院信息系统"]
     items = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
             items.append(line)
@@ -84,7 +89,7 @@ def load_brands() -> list[dict]:
     path = CONFIG_DIR / "brands.json"
     if not path.exists():
         return []
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def load_supplier_rules() -> list[dict]:
@@ -92,7 +97,7 @@ def load_supplier_rules() -> list[dict]:
     if not path.exists():
         return []
     rows = []
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
     for line in lines[1:]:
         if not line.strip():
             continue

@@ -71,7 +71,12 @@ CREATE TABLE IF NOT EXISTS announcements (
     fetch_status TEXT DEFAULT 'ok',
     is_void INTEGER DEFAULT 0,
     first_seen_at TEXT,
-    last_seen_at TEXT
+    last_seen_at TEXT,
+    source_count INTEGER DEFAULT 1,
+    alt_sources TEXT DEFAULT '[]',
+    project_no TEXT,
+    agency TEXT,
+    extract_meta TEXT DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_ann_hospital ON announcements(hospital_id);
 CREATE INDEX IF NOT EXISTS idx_ann_city ON announcements(city_code);
@@ -93,9 +98,46 @@ CREATE TABLE IF NOT EXISTS awards (
     brand_basis TEXT,
     review_status TEXT DEFAULT 'none',
     reviewed_by TEXT,
-    reviewed_at TEXT
+    reviewed_at TEXT,
+    amount_cents INTEGER,
+    amount_kind TEXT,
+    tax_included INTEGER,
+    amount_basis TEXT,
+    missing_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_award_ann ON awards(announcement_id);
+
+CREATE TABLE IF NOT EXISTS query_trace (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER,
+    keyword TEXT,
+    source TEXT,
+    status TEXT DEFAULT 'running',
+    returned INTEGER DEFAULT 0,
+    kept INTEGER DEFAULT 0,
+    dropped INTEGER DEFAULT 0,
+    elapsed_ms INTEGER DEFAULT 0,
+    error_kind TEXT,
+    error TEXT,
+    created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trace_task ON query_trace(task_id);
+CREATE INDEX IF NOT EXISTS idx_trace_kw ON query_trace(keyword);
+
+CREATE TABLE IF NOT EXISTS low_relevance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL UNIQUE,
+    title TEXT,
+    source_site TEXT,
+    source_name TEXT,
+    keyword TEXT,
+    score REAL DEFAULT 0,
+    reason TEXT,
+    publish_date TEXT,
+    created_at TEXT,
+    last_seen_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lowrel_source ON low_relevance(source_site);
 
 CREATE TABLE IF NOT EXISTS attachments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,11 +254,23 @@ MIGRATIONS = {
         "is_master": "INTEGER DEFAULT 0",
         "merged_into": "INTEGER",
     },
+    "announcements": {
+        "source_count": "INTEGER DEFAULT 1",
+        "alt_sources": "TEXT DEFAULT '[]'",
+        "project_no": "TEXT",
+        "agency": "TEXT",
+        "extract_meta": "TEXT DEFAULT '{}'",
+    },
     "awards": {
         "brand_basis": "TEXT",
         "review_status": "TEXT DEFAULT 'none'",
         "reviewed_by": "TEXT",
         "reviewed_at": "TEXT",
+        "amount_cents": "INTEGER",
+        "amount_kind": "TEXT",
+        "tax_included": "INTEGER",
+        "amount_basis": "TEXT",
+        "missing_reason": "TEXT",
     },
     "attachments": {
         "kind": "TEXT DEFAULT '其他'",
@@ -303,8 +357,11 @@ def db():
 
 
 def init_db() -> None:
+    from . import source_state
+
     with db() as conn:
         conn.executescript(SCHEMA)
+        source_state.ensure_tables(conn)
         migrate_db(conn)
         for city in CITIES:
             conn.execute(

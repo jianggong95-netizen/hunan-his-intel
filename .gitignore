@@ -2,9 +2,9 @@
 __pycache__/
 *.pyc
 .env
-data/*.db
-data/attachments/*
-data/exports/*
+data/
 build/
 dist/
 *.spec
+.screenshots/
+*.zip

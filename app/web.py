@@ -11,7 +11,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_file, session, url_for
 
-from . import aggregate, attachments, brands_ops, config, export, hospital_master, importer, pipeline, tianyancha
+from . import aggregate, attachments, brands_ops, config, export, hospital_master, importer, pipeline, tianyancha, version
 from .db import audit, db, now
 from .collectors.base import PAUSE_EVENT, STOP_EVENT
 from .collectors.registry import SOURCES
@@ -56,6 +56,7 @@ def login():
     if request.args.get("error"):
         error = "用户名或密码不正确"
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<link rel="icon" type="image/png" href="/static/favicon.png">
 <title>登录 · 湖南HIS中标情报</title>
 <style>body{{font-family:"Microsoft YaHei",sans-serif;background:#0f2e2a;display:flex;align-items:center;
 justify-content:center;height:100vh;margin:0;color:#e8f3ef}}
@@ -97,7 +98,7 @@ def logout():
 @login_required
 def index():
     return render_template("index.html", user=session.get("user"), role=session.get("role"),
-                           cities=aggregate.city_summary(), sources=SOURCES)
+                           cities=aggregate.city_summary(), sources=SOURCES, app_version=version.__version__)
 
 
 def _build_filters(data) -> dict:
@@ -209,6 +210,20 @@ def api_quality():
     return jsonify({"ok": True, **aggregate.quality_stats()})
 
 
+@app.get("/api/query-trace")
+@login_required
+def api_query_trace():
+    limit = request.args.get("limit") or 200
+    return jsonify({"ok": True, "rows": aggregate.query_trace(limit=int(limit))})
+
+
+@app.get("/api/low-relevance")
+@login_required
+def api_low_relevance():
+    limit = request.args.get("limit") or 200
+    return jsonify({"ok": True, "rows": aggregate.low_relevance_list(limit=int(limit))})
+
+
 @app.get("/api/tasks")
 @login_required
 def api_tasks():
@@ -225,6 +240,12 @@ def api_task_logs(task_id: int):
 @login_required
 def api_health():
     return jsonify({"ok": True, "rows": aggregate.source_health(), "sources": SOURCES})
+
+
+@app.get("/api/version")
+@login_required
+def api_version():
+    return jsonify({"ok": True, **version.update_info()})
 
 
 @app.post("/api/health/refresh")

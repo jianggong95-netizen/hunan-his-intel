@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from .. import config
+from .. import config, source_state
 from ..normalize import clean_text
 
 PAUSE_EVENT = threading.Event()  # set 表示暂停
@@ -28,6 +28,19 @@ class Fetcher:
         self.logger = logger or (lambda msg, level="info": None)
         self._last_request = 0.0
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
+        self.stage_errors: list[dict] = []
+
+    def begin_stage(self) -> None:
+        """开始一个采集阶段（一个源的一次检索/翻页），清空上一阶段的错误。"""
+        self.stage_errors = []
+
+    def take_stage_errors(self) -> list[dict]:
+        errors, self.stage_errors = self.stage_errors, []
+        return errors
+
+    def record_error(self, kind: str, message: str) -> None:
+        self.stage_errors.append({"kind": kind, "message": (message or "")[:300]})
+
 
     def _wait(self):
         elapsed = time.time() - self._last_request
@@ -62,6 +75,7 @@ class Fetcher:
             return None
         if not self.robots_allowed(url):
             self.logger(f"robots 禁止抓取: {url}", "warning")
+            self.record_error("robots", url)
             return None
         for attempt in range(retries + 1):
             self._wait()
@@ -76,11 +90,30 @@ class Fetcher:
                     **kwargs,
                 )
                 resp.encoding = resp.apparent_encoding if not resp.encoding or resp.encoding == "ISO-8859-1" else resp.encoding
+                self._note_response(resp, url, kwargs.get("stream", False))
                 return resp
             except Exception as exc:  # noqa: BLE001
+                kind = source_state.classify_exception(exc)
                 self.logger(f"请求失败({attempt + 1}/{retries + 1}) {url}: {exc}", "warning")
+                self.record_error(kind, f"{url} {exc}")
                 time.sleep(2 * (attempt + 1))
         return None
+
+    def _note_response(self, resp: requests.Response, url: str, stream: bool) -> None:
+        """把 HTTP 错误与疑似风控页登记为阶段错误；不改变返回行为，由编排层决定冷却。"""
+        if resp.status_code >= 400:
+            self.record_error(source_state.classify_status(resp.status_code),
+                              f"{url} HTTP {resp.status_code}")
+            return
+        if stream or not resp.headers.get("Content-Type", "").lower().startswith(("text/html", "application/xhtml")):
+            return
+        try:
+            kind = source_state.classify_body(resp.text[:4000])
+        except Exception:  # noqa: BLE001
+            return
+        if kind:
+            self.record_error(kind, f"{url} 疑似拦截页")
+
 
     def download(self, url: str, dest) -> tuple[bool, str, int]:
         """下载附件，返回 (成功, sha256, 大小)。"""

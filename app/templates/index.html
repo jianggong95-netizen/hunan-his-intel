@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<link rel="icon" type="image/png" href="/static/favicon.png">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>湖南公立医院 HIS 中标情报</title>
 <style>
@@ -126,12 +127,14 @@ tr:hover td{background:#fbfdfc}
 .toast.show{opacity:1;transform:none}
 @media(max-width:1100px){.cols{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}.cities{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}.cities{grid-template-columns:repeat(2,1fr)}}
+.ver{font-size:12px;font-weight:400;color:var(--green);background:var(--mint);border:1px solid #cfe0da;border-radius:999px;padding:2px 10px;cursor:pointer;vertical-align:middle}
+.ver:hover{background:#dcefe8}
 </style>
 </head>
 <body>
 <div class="topbar">
   <div class="brand">
-    <h1>湖南公立医院 HIS 中标情报</h1>
+    <h1>湖南公立医院 HIS 中标情报 <span class="ver" onclick="checkUpdate()" title="点击检查更新">v{{ app_version }}</span></h1>
     <p>宏观：14 市州 · 每家医院最近 2 次 HIS 中标 · 厂家品牌格局 · 公告与参数附件可追溯</p>
   </div>
   <div class="spacer"></div>
@@ -167,6 +170,8 @@ tr:hover td{background:#fbfdfc}
           <h2>每家医院最近 2 次 HIS 中标</h2>
           <span class="sub" id="tableSub">按中标日期倒序；同一天多包合并计 1 次</span>
           <div class="spacer"></div>
+          <button class="chip" onclick="openTrace()">检索诊断</button>
+          <button class="chip" onclick="openLowRel()">低相关待核<span id="lowrelCount"></span></button>
           <button class="chip" onclick="openTasks()">采集任务</button>
         </div>
         <div class="filters">
@@ -232,7 +237,7 @@ tr:hover td{background:#fbfdfc}
       <div class="formrow"><label>关键词</label><input id="kw" placeholder="留空使用 config/his_keywords.txt"></div>
       <div class="formrow"><label>起始日期</label><input id="since" value="2023-01-01"></div>
       <div class="formrow"><label>每词最大页</label><input id="pages" type="number" value="6" min="1" max="40"></div>
-      <div class="note">实测提示：怀化/省站群搜索可用；省政采网与多数市州站点在当前网络下超时，需在境内网络运行。采集默认限速 4.5 秒/请求。</div>
+      <div class="note">实测提示：省政采 / 省站群搜索 / 怀化交易中心可用；国政采网对当前出口 IP 风控，需境内合规出口重试。限速间隔按 .env 的 REQUEST_INTERVAL_SEC 执行。</div>
       <div class="modal-actions">
         <button class="btn2" onclick="ctl('pause')">暂停</button>
         <button class="btn2" onclick="ctl('resume')">恢复</button>
@@ -249,6 +254,22 @@ tr:hover td{background:#fbfdfc}
   <div class="modal">
     <div class="modal-h"><h3>采集任务与日志</h3><button class="btn2" onclick="closeMask('taskMask')">关闭</button></div>
     <div class="modal-b"><div id="tasklist" class="note">加载中…</div></div>
+  </div>
+</div>
+
+<!-- 检索诊断 -->
+<div class="mask" id="traceMask">
+  <div class="modal">
+    <div class="modal-h"><h3>检索诊断（最近查询）</h3><button class="btn2" onclick="closeMask('traceMask')">关闭</button></div>
+    <div class="modal-b"><div id="traceList" class="note">加载中…</div></div>
+  </div>
+</div>
+
+<!-- 低相关待核 -->
+<div class="mask" id="lowrelMask">
+  <div class="modal">
+    <div class="modal-h"><h3>低相关待核</h3><button class="btn2" onclick="closeMask('lowrelMask')">关闭</button></div>
+    <div class="modal-b"><div id="lowrelList" class="note">加载中…</div></div>
   </div>
 </div>
 
@@ -467,6 +488,7 @@ function renderQuality(q){
   $("quality").innerHTML = `
     <div class="kv"><span>公告总数</span><b>${q.announcements||0}</b></div>
     <div class="kv"><span>医院总数</span><b>${q.hospitals||0}</b></div>
+    <div class="kv"><span>低相关待核</span><b style="color:${q.low_relevance?"#a15c00":"#1f6f5c"}">${q.low_relevance||0}</b></div>
     <div class="kv"><span>已备注记录</span><b>${q.noted_records||0}</b></div>
     <div class="kv"><span>详情不可达</span><b style="color:${q.detail_unreachable?"#a15c00":"#1f6f5c"}">${q.detail_unreachable||0}</b></div>
     <div class="kv"><span>缺中标金额</span><b style="color:${q.missing_amount?"#a15c00":"#1f6f5c"}">${q.missing_amount||0}</b></div>
@@ -474,6 +496,8 @@ function renderQuality(q){
     <div class="kv"><span>未识别厂家</span><b>${q.unknown_brand_awards||0} / ${q.awards||0}</b></div>
     <div class="kv"><span>附件留存</span><b>${atts.ok||0} 有效 / ${attTotal} 条</b></div>
     <div class="kv"><span>参数 / 招标文件</span><b>${param} / ${tender}</b></div>`;
+  const lowrel = $("lowrelCount");
+  if(lowrel) lowrel.textContent = q.low_relevance ? `（${q.low_relevance}）` : "";
 }
 
 function renderHealth(rows, sources){
@@ -585,18 +609,25 @@ function renderRecords(){
     const direct = atts.filter(a=>a.source!=="announcement");
     const attHtml = direct.length ? direct.slice(0,3).map(a=>{
       const cls = a.kind==="参数文件" ? "k-param" : (a.kind==="招标文件" ? "k-tender" : "");
+      const href = (a.source==="body_link" && a.status==="unverified") ? a.url : `/attachment/${a.id}`;
       return `<a class="att ${cls} ${a.is_valid?"":"bad"}" target="_blank"
-        href="/attachment/${a.id}" title="${esc(a.name)}（${esc(a.kind)}，${a.is_valid?"有效":"失效"}）">${esc((a.name||a.kind).slice(0,12))}</a>`;
+        href="${esc(href)}" title="${esc(a.name)}（${esc(a.kind)}，${a.is_valid?"有效":"失效"}）">${esc((a.name||a.kind).slice(0,12))}</a>`;
     }).join("") : `<span style="color:#9fb2aa;font-size:12px">无参数附件</span>`;
     const brandCls = r.brand==="未识别" ? "unknown":"";
     const statusBadge = r.fetch_status!=="ok" ? `<span class="badg">详情不可达</span>` : "";
+    const srcBadge = (r.source_count||1) > 1
+      ? `<span class="okbg" title="其他来源：${esc((r.alt_sources||[]).join("、"))}">多源 ${r.source_count}</span>` : "";
+    const missLabels = r.missing_labels || [];
+    const missDetail = Object.entries(r.missing_reasons||{}).map(([k,v])=>`${esc(k)}：${esc(v)}`).join("；");
+    const missBadge = missLabels.length
+      ? `<span class="badg" title="${missDetail}">缺 ${missLabels.length} 字段：${esc(missLabels.join("、"))}</span>` : "";
     return `<tr class="${grp?"grp":""}">
       <td><div class="hosp"><a href="javascript:void(0)" onclick="openHospital(${r.hospital_id})">${esc(r.hospital_name)}</a></div>
         <div style="font-size:12px;color:#7a948b">${esc(r.city)}<span class="rank ${r.rank===2?"two":""}">近${r.rank}次</span></div></td>
-      <td>${esc(r.title)} ${statusBadge}</td>
+      <td>${esc(r.title)} ${statusBadge}${srcBadge}${missBadge}</td>
       <td>${esc(r.supplier)}</td>
       <td><span class="brandtag ${brandCls}" title="${r.brand_confidence<0.6?'正文提及，待人工复核':'供应商名称直接命中'}">${esc(r.brand)}${r.brand!=="未识别"&&r.brand_confidence<0.6?' ·待核':''}</span></td>
-      <td class="amount">${fmtMoney(r.amount)}</td>
+      <td class="amount" title="${r.amount_cents!=null?(`${r.amount_cents} 分 · ${esc(r.amount_kind||"总价")}${r.tax_included===false?" · 不含税":(r.tax_included?" · 含税":"")}`):""}">${fmtMoney(r.amount)}${r.amount_kind==="分包价"?'<div style="font-size:11px;color:#7a948b">分包价</div>':''}</td>
       <td class="amount">${esc(r.publish_date)||"未获取"}</td>
       <td class="notecell">${renderNoteCell(r)}</td>
       <td><a target="_blank" href="${esc(r.url)}">公告原文</a><div style="margin-top:3px">${attHtml}
@@ -692,11 +723,14 @@ async function openAttachments(id){
       <th>类型</th><th>文件</th><th>来源</th><th>状态</th><th>上传人</th><th>SHA256</th><th>操作</th></tr></thead><tbody>` +
     rows.map(a=>{
       const isOrig = a.source==="announcement";
-      const srcName = a.source==="manual" ? "手工上传" : (isOrig ? "公告原文" : "自动直链");
-      const link = isOrig
+      const srcName = a.source==="manual" ? "手工上传"
+        : a.source==="body_link" ? "正文链接"
+        : (isOrig ? "公告原文" : "自动直链");
+      const isPage = a.source==="body_link" && a.status==="unverified";
+      const link = isOrig || isPage
         ? `<a href="${esc(a.url)}" target="_blank">打开原文</a>`
         : `<a href="/attachment/${a.id}" target="_blank">预览</a> <a href="/attachment/${a.id}?download=1">下载</a>`;
-      const check = isOrig ? "" : ` <a href="javascript:void(0)" onclick="checkAttachment(${a.id})">复检</a>`;
+      const check = (isOrig || isPage) ? "" : ` <a href="javascript:void(0)" onclick="checkAttachment(${a.id})">复检</a>`;
       const sha = a.sha256 ? a.sha256.slice(0,12)+"…" : "—";
       return `<tr><td>${esc(a.kind)}</td><td>${esc(a.name)}</td><td>${srcName}</td>
         <td>${a.is_valid?`<span class="okbg">有效</span>`:`<span class="badg">失效</span>`}</td>
@@ -758,7 +792,7 @@ async function pollCollect(){
   const d = await api("/api/collect/status");
   const box = $("collectLog");
   if(box){
-    let txt = d.running ? "采集中…（限速 4.5 秒/请求，可暂停）" : (d.error ? "失败: "+d.error : (d.last ? `完成：候选 ${d.last.items||0}，新增 ${d.last.inserted||0}，更新 ${d.last.updated||0}，跳过 ${d.last.skipped||0}` : "尚未启动"));
+    let txt = d.running ? "采集中…（按 .env 限速，可暂停）" : (d.error ? "失败: "+d.error : (d.last ? `完成：候选 ${d.last.items||0}，新增 ${d.last.inserted||0}，更新 ${d.last.updated||0}，跳过 ${d.last.skipped||0}` : "尚未启动"));
     if(d.task_id){ 
       const logs = await api(`/api/tasks/${d.task_id}/logs`);
       const lines = (logs.rows||[]).slice(0,12).reverse().map(l=>`[${l.ts.slice(11)}] ${l.level==="warning"?"!":""} ${l.message}`);
@@ -774,6 +808,17 @@ async function refreshHealth(){
   toast("正在体检数据源…");
   const d = await api("/api/health/refresh",{method:"POST"});
   if(d.ok){ renderHealth(d.rows, []); toast("体检完成"); }
+}
+
+async function checkUpdate(){
+  toast("正在检查更新…");
+  const d = await api("/api/version");
+  if(!d.ok){ toast(d.error||"检查失败"); return; }
+  if(d.error){ toast("检查更新失败："+d.error+"（离线不影响使用）"); return; }
+  if(d.has_update){
+    toast("发现新版本 v"+d.version+"：下载 zip 解压覆盖 his-intel 目录即可升级，data/ 不受影响");
+    window.open(d.page||d.url,"_blank");
+  } else toast("已是最新版本 v"+(d.current||""));
 }
 
 async function doExport(){

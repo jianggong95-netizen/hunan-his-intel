@@ -80,13 +80,16 @@ class HunanGovSearchCollector:
         return results
 
     def collect(self, keywords: list[str] | None = None, scopes: list[str] | None = None,
-                max_pages: int | None = None) -> list[dict]:
+                max_pages: int | None = None, start_scope_index: int = 0,
+                on_scope=None) -> list[dict]:
         keywords = (keywords or config.load_keywords())[:3]
         scopes = scopes or [c["scope"] for c in CITIES] + [PROVINCE_SCOPE]
         out: list[dict] = []
         seen = set()
         pages = max(1, min(max_pages or config.COLLECT_MAX_PAGES, 3))
-        for scope in scopes:
+        for index, scope in enumerate(scopes):
+            if index < max(0, start_scope_index):
+                continue
             for kw in keywords:
                 if STOP_EVENT.is_set():
                     break
@@ -95,4 +98,8 @@ class HunanGovSearchCollector:
                         continue
                     seen.add(item["url"])
                     out.append(item)
+            if on_scope:
+                on_scope(index, scope)
+            if STOP_EVENT.is_set():
+                break
         return out
